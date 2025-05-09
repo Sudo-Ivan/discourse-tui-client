@@ -28,6 +28,7 @@ go install github.com/Sudo-Ivan/discourse-tui-client@latest
 - [ ] Reply and Post
 - [ ] Edit and Delete
 - [ ] Fix URLs (not showing)
+- [ ] Improve keyboard navigation
 
 ## How it works
 
@@ -64,6 +65,16 @@ error=#FF0000
 ## Contributors
 
 All contributions welcome. 
+
+## FAQ
+
+1. Why txt for config files?
+
+Its simple and because I can. You can always fork and change to your liking. 
+
+2. Why not use API?
+
+Not all discourse instances support the API or allow users to use it.
 
 ## License
 
