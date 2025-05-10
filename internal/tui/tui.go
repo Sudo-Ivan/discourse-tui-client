@@ -261,13 +261,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if i, ok := m.List.SelectedItem().(topicItem); ok {
 				posts, err := m.Client.GetTopicPosts(i.topic.ID)
 				if err != nil {
-					m.Viewport.SetContent(fmt.Sprintf("Error fetching posts: %v", err))
+					// Calculate width for error message, similar to post content
+					errorContentWidth := m.Viewport.Width - 2
+					if errorContentWidth < 1 {
+						errorContentWidth = 1
+					}
+					errorStyle := lipgloss.NewStyle().Width(errorContentWidth)
+					m.Viewport.SetContent(errorStyle.Render(fmt.Sprintf("Error fetching posts: %v", err)))
 					return m, nil
 				}
 
 				var content strings.Builder
+				// Calculate usable width for post content inside the viewport.
+				// Viewport's border (RoundedBorder) takes 1 char on left and 1 on right.
+				postContentWidth := m.Viewport.Width - 2
+				if postContentWidth < 1 {
+					postContentWidth = 1 // Ensure at least 1 char width for lipgloss.
+				}
+
 				for _, post := range posts.PostStream.Posts {
-					content.WriteString(FormatPost(post))
+					// Pass the calculated width to FormatPost.
+					content.WriteString(FormatPost(post, postContentWidth))
 					content.WriteString("\n\n---\n\n")
 				}
 
@@ -390,16 +404,26 @@ func (m Model) View() string {
 	return view
 }
 
-func FormatPost(post discourse.Post) string {
+func FormatPost(post discourse.Post, contentWidth int) string {
 	p := bluemonday.StrictPolicy()
-	cleanHTML := p.Sanitize(post.Cooked)
+	// Sanitize the HTML content to plain text first.
+	plainTextContent := p.Sanitize(post.Cooked)
+
+	// Style for wrapping the main content body.
+	// Ensure contentWidth is at least 1 to avoid issues with lipgloss.Width(0) or negative.
+	// This check is now primarily handled at the call site, but good for robustness.
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	contentWrappingStyle := lipgloss.NewStyle().Width(contentWidth)
+	wrappedPostBody := contentWrappingStyle.Render(plainTextContent)
 
 	return fmt.Sprintf("Post #%d by %s (%s)\nPosted: %s\n\n%s\n\nReads: %d | Score: %.1f",
 		post.PostNumber,
 		post.Name,
 		post.Username,
 		post.CreatedAt.Format("2006-01-02 15:04:05"),
-		cleanHTML,
+		wrappedPostBody, // Use the pre-wrapped post body.
 		post.Reads,
 		post.Score)
 }
