@@ -6,7 +6,6 @@ package tui
 import (
 	"fmt"
 	"log"
-	"regexp"
 	"strings"
 	"time"
 
@@ -404,33 +403,25 @@ func FormatPost(post discourse.Post, contentWidth int) string {
 	text := strings.ReplaceAll(sanitizedContent, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
 
-	lines := strings.Split(text, "\n")
-	for i, line := range lines {
-		if strings.TrimSpace(line) == "" {
-			lines[i] = ""
+	potentialParagraphs := strings.Split(text, "\n")
+	var paragraphsSource []string
+	for _, para := range potentialParagraphs {
+		trimmedPara := strings.TrimSpace(para)
+		if trimmedPara != "" {
+			paragraphsSource = append(paragraphsSource, trimmedPara)
 		}
 	}
-	text = strings.Join(lines, "\n")
-
-	multipleNewlinesRegex := regexp.MustCompile(`\n{3,}`)
-	text = multipleNewlinesRegex.ReplaceAllString(text, "\n\n")
-
-	text = strings.TrimSpace(text)
 
 	if contentWidth < 1 {
 		contentWidth = 1
 	}
 	contentWrappingStyle := lipgloss.NewStyle().Width(contentWidth)
 
-	paragraphsSource := strings.Split(text, "\n\n")
 	var renderedParagraphs []string
 	for _, paraStr := range paragraphsSource {
-		trimmedParaStr := strings.TrimSpace(paraStr)
-		if trimmedParaStr != "" {
-			renderedBlock := contentWrappingStyle.Render(trimmedParaStr)
-			renderedBlock = strings.TrimRight(renderedBlock, "\n") 
-			renderedParagraphs = append(renderedParagraphs, renderedBlock)
-		}
+		renderedBlock := contentWrappingStyle.Render(paraStr)
+		renderedBlock = strings.TrimRight(renderedBlock, "\n") 
+		renderedParagraphs = append(renderedParagraphs, renderedBlock)
 	}
 	wrappedPostBody := strings.Join(renderedParagraphs, "\n\n")
 
@@ -446,7 +437,7 @@ func FormatPost(post discourse.Post, contentWidth int) string {
 
 	var likeInfo string
 	for _, action := range post.ActionsSummary {
-		if action.ID == 2 { // 2 is usually the ID for 'like'
+		if action.ID == 2 {
 			likeCount := action.Count
 			if action.Acted {
 				likeInfo = fmt.Sprintf("Likes: %d (You liked this)", likeCount)
