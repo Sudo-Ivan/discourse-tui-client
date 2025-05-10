@@ -94,6 +94,7 @@ type Post struct {
 
 type PostStream struct {
 	Posts []Post `json:"posts"`
+	Stream []int `json:"stream"`
 }
 
 type TopicResponse struct {
@@ -330,27 +331,98 @@ func (c *Client) GetLatestTopics() (*Response, error) {
 }
 
 func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
-	resp, err := c.client.Get(fmt.Sprintf("%s/t/%d.json", c.baseURL, topicID))
+	// Step 1: Fetch initial topic data to get post IDs
+	initialResp, err := c.client.Get(fmt.Sprintf("%s/t/%d.json", c.baseURL, topicID))
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch topic posts: %v", err)
+		return nil, fmt.Errorf("failed to fetch initial topic data: %w", err)
 	}
-	defer resp.Body.Close()
+	defer initialResp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API error: %s - %s", resp.Status, string(body))
+	if initialResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(initialResp.Body)
+		return nil, fmt.Errorf("API error fetching initial topic data: %s - %s", initialResp.Status, string(body))
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	initialBody, err := io.ReadAll(initialResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %v", err)
+		return nil, fmt.Errorf("failed to read initial topic response body: %w", err)
 	}
 
-	result := gjson.ParseBytes(body)
+	initialResult := gjson.ParseBytes(initialBody)
+	postStreamIDsResult := initialResult.Get("post_stream.stream")
+	if !postStreamIDsResult.Exists() {
+		return nil, fmt.Errorf("post_stream.stream not found in initial topic response")
+	}
+
+	var postIDs []int
+	for _, idEntry := range postStreamIDsResult.Array() {
+		postIDs = append(postIDs, int(idEntry.Int()))
+	}
+
+	if len(postIDs) == 0 {
+		// If there are no post IDs, return an empty response or handle as appropriate
+		// For now, we can assume the existing behavior for topics with no posts from stream
+		// or return an empty PostStream.
+		// Let's try to parse the initial body as if it might contain posts directly (for very short topics)
+		response := &TopicResponse{}
+		posts := initialResult.Get("post_stream.posts")
+		posts.ForEach(func(_, value gjson.Result) bool {
+			post := Post{
+				ID:          int(value.Get("id").Int()),
+				Name:        value.Get("name").Str,
+				Username:    value.Get("username").Str,
+				CreatedAt:   value.Get("created_at").Time(),
+				Cooked:      value.Get("cooked").Str,
+				PostNumber:  int(value.Get("post_number").Int()),
+				ReplyCount:  int(value.Get("reply_count").Int()),
+				TopicID:     int(value.Get("topic_id").Int()),
+				TopicSlug:   value.Get("topic_slug").Str,
+				Reads:       int(value.Get("reads").Int()),
+				Score:       value.Get("score").Float(),
+			}
+			response.PostStream.Posts = append(response.PostStream.Posts, post)
+			return true
+		})
+		return response, nil
+	}
+
+	// Step 2: Construct URL with all post_ids
+	postsURL := fmt.Sprintf("%s/t/%d/posts.json", c.baseURL, topicID)
+	req, err := http.NewRequest("GET", postsURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request for all posts: %w", err)
+	}
+
+	q := req.URL.Query()
+	for _, postID := range postIDs {
+		q.Add("post_ids[]", fmt.Sprintf("%d", postID))
+	}
+	// As seen in the user's cURL:
+	q.Add("include_suggested", "false")
+	req.URL.RawQuery = q.Encode()
+
+	// Step 3: Fetch all posts
+	allPostsResp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch all topic posts: %w", err)
+	}
+	defer allPostsResp.Body.Close()
+
+	if allPostsResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(allPostsResp.Body)
+		return nil, fmt.Errorf("API error fetching all posts: %s - %s", allPostsResp.Status, string(body))
+	}
+
+	allPostsBody, err := io.ReadAll(allPostsResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read all posts response body: %w", err)
+	}
+
+	// Step 4: Parse posts from the response
+	result := gjson.ParseBytes(allPostsBody)
 	response := &TopicResponse{}
 
-	// Parse posts
-	posts := result.Get("post_stream.posts")
+	posts := result.Get("post_stream.posts") // Assuming the structure is the same
 	posts.ForEach(func(_, value gjson.Result) bool {
 		post := Post{
 			ID:          int(value.Get("id").Int()),
