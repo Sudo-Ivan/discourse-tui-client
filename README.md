@@ -29,6 +29,7 @@ go install github.com/Sudo-Ivan/discourse-tui-client@latest
 - [ ] Edit and Delete
 - [ ] Fix URLs (not showing)
 - [ ] Improve keyboard navigation
+- [ ] Performance and Memory usage improvements
 
 ## Usage
 
@@ -89,6 +90,14 @@ This client interacts with Discourse forums by:
    - Fullscreen mode (work-in-progess)
 
 5. **Customizable Colors**: Allows theme customization through a simple configuration file `colors.txt` in users `$HOME/.config/discourse-tui-client/colors.txt`.
+
+Go external dependencies:
+
+- [Bubble Tea](https://github.com/charmbracelet/bubbletea)
+- [lipgloss](https://github.com/charmbracelet/lipgloss)
+- [Bubbles](https://github.com/charmbracelet/bubbles)
+- [bluemonday](https://github.com/microcosm-cc/bluemonday)
+- [gjson](https://github.com/tidwall/gjson)
 
 ## Customizing Colors
 
