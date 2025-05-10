@@ -22,14 +22,14 @@ go install github.com/Sudo-Ivan/discourse-tui-client@latest
 
 ## To Do
 
-- [ ] Fix search
-- [ ] Fix fullscreen
 - [ ] Multiple instances support
-- [ ] Reply and Post
+- [ ] Reply and Post (WIP)
 - [ ] Edit and Delete
 - [ ] Fix URLs (not showing)
 - [ ] Improve keyboard navigation
 - [ ] Performance and Memory usage improvements
+- [ ] Navigate categories and tags
+- [ ] DM support
 
 ## Usage
 
