@@ -61,6 +61,7 @@ type Model struct {
 	LastRefresh time.Time
 	Width      int
 	Height     int
+	InstanceURL string
 }
 
 func InitialModel(client *discourse.Client, topics []discourse.Topic) Model {
@@ -94,6 +95,8 @@ func InitialModel(client *discourse.Client, topics []discourse.Topic) Model {
 	search.Placeholder = "Search topics..."
 	search.Width = 30
 
+	instanceURL := strings.TrimPrefix(strings.TrimPrefix(client.BaseURL(), "https://"), "http://")
+
 	return Model{
 		List:      l,
 		Viewport:  vp,
@@ -101,6 +104,7 @@ func InitialModel(client *discourse.Client, topics []discourse.Topic) Model {
 		Topics:    topics,
 		Search:    search,
 		LastRefresh: time.Now(),
+		InstanceURL: instanceURL,
 	}
 }
 
@@ -312,14 +316,49 @@ func (m Model) View() string {
 		return "\nInitializing..."
 	}
 
+	// Calculate dynamic heights with more precise spacing
+	headerHeight := 2
+	helpHeight := 2
+	availableHeight := m.Height - headerHeight - helpHeight - 2 // -2 for margins
+	listHeight := (availableHeight * 2) / 3 // Give list more space
+	viewportHeight := availableHeight - listHeight
+
+	// Style the header with minimal padding
+	instanceHeader := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("62")).
+		Padding(0, 1).
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("62")).
+		Width(m.Width - 2).
+		Align(lipgloss.Center).
+		Render(m.InstanceURL)
+
+	// Style the help text with subtle color
+	help := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240")).
+		Padding(0, 1).
+		Render(fmt.Sprintf("Press 'f' for fullscreen, '/' to search, 'R' to refresh, 'esc' to exit fullscreen/search • Last refresh: %s", m.LastRefresh.Format("15:04:05")))
+
 	if m.Fullscreen {
-		return lipgloss.NewStyle().
-			Width(m.Width).
-			Height(m.Height).
-			MaxWidth(m.Width).
-			MaxHeight(m.Height).
-			Render(m.Viewport.View())
+		return lipgloss.JoinVertical(
+			lipgloss.Left,
+			instanceHeader,
+			lipgloss.NewStyle().
+				Width(m.Width).
+				Height(m.Height - 4). // Just adjust height to use full space minus header and help
+				MaxWidth(m.Width).
+				MaxHeight(m.Height - 4).
+				Render(m.Viewport.View()),
+			help,
+		)
 	}
+
+	// Set list and viewport dimensions
+	m.List.SetWidth(m.Width - 2) // Account for borders
+	m.List.SetHeight(listHeight)
+	m.Viewport.Width = m.Width - 2 // Account for borders
+	m.Viewport.Height = viewportHeight
 
 	var view string
 	if m.Searching {
@@ -327,24 +366,28 @@ func (m Model) View() string {
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.Color("62")).
 			Padding(0, 1).
+			Width(m.Width - 2).
 			Render(m.Search.View())
 
 		view = lipgloss.JoinVertical(
 			lipgloss.Left,
-			searchBox,
-			m.List.View(),
+			instanceHeader,
+			lipgloss.NewStyle().MarginTop(1).Render(searchBox),
+			lipgloss.NewStyle().MarginTop(1).Render(m.List.View()),
 			lipgloss.NewStyle().MarginTop(1).Render(m.Viewport.View()),
+			help,
 		)
 	} else {
 		view = lipgloss.JoinVertical(
 			lipgloss.Left,
-			m.List.View(),
+			instanceHeader,
+			lipgloss.NewStyle().MarginTop(1).Render(m.List.View()),
 			lipgloss.NewStyle().MarginTop(1).Render(m.Viewport.View()),
+			help,
 		)
 	}
 
-	help := fmt.Sprintf("\nPress 'f' for fullscreen, '/' to search, 'R' to refresh, 'esc' to exit fullscreen/search\nLast refresh: %s", m.LastRefresh.Format("15:04:05"))
-	return view + help
+	return view
 }
 
 func FormatPost(post discourse.Post) string {
