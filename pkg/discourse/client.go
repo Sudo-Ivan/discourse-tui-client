@@ -121,7 +121,6 @@ type Category struct {
 	PostCount   int    `json:"post_count"`
 	Position    int    `json:"position"`
 	Description string `json:"description"`
-	// Topics      []Topic `json:"topics"` // This field is problematic for categories.json parsing if not excluded or handled
 }
 
 type CategoryList struct {
@@ -325,7 +324,6 @@ func (c *Client) GetLatestTopics() (*Response, error) {
 		return true
 	})
 
-	// Fetch and map categories
 	categories, err := c.GetCategories()
 	if err != nil {
 		log.Printf("Warning: failed to fetch categories: %v", err)
@@ -718,11 +716,11 @@ func (c *Client) GetCategories() (*CategoryResponse, error) {
 	instanceDir := filepath.Join(userCacheDir, "discourse-tui-client", "instances", strings.TrimPrefix(strings.TrimPrefix(c.baseURL, "https://"), "http://"))
 	cachePath := filepath.Join(instanceDir, "categories.json")
 
+	// #nosec G304
 	if data, err := os.ReadFile(cachePath); err == nil {
 		result := gjson.ParseBytes(data)
 		response := &CategoryResponse{}
 
-		// Parse categories
 		categories := result.Get("category_list.categories")
 		categories.ForEach(func(_, value gjson.Result) bool {
 			category := Category{
@@ -773,7 +771,6 @@ func (c *Client) GetCategories() (*CategoryResponse, error) {
 	result := gjson.ParseBytes(body)
 	response := &CategoryResponse{}
 
-	// Parse categories
 	categories := result.Get("category_list.categories")
 	categories.ForEach(func(_, value gjson.Result) bool {
 		category := Category{

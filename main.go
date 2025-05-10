@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/tidwall/gjson"
 
 	"github.com/Sudo-Ivan/discourse-tui-client/internal/config"
 	"github.com/Sudo-Ivan/discourse-tui-client/internal/tui"
@@ -233,75 +232,18 @@ func main() {
 	cachedData, err := os.ReadFile(latestTopicsCachePath)
 	if err == nil {
 		log.Printf("Attempting to load latest topics from cache: %s", latestTopicsCachePath)
-		result := gjson.ParseBytes(cachedData)
-		if result.Exists() {
-			cr := &discourse.Response{}
-
-			users := result.Get("users")
-			users.ForEach(func(_, value gjson.Result) bool {
-				user := discourse.User{
-					ID:             int(value.Get("id").Int()),
-					Username:       value.Get("username").Str,
-					Name:           value.Get("name").Str,
-					AvatarTemplate: value.Get("avatar_template").Str,
-					TrustLevel:     int(value.Get("trust_level").Int()),
-					Moderator:      value.Get("moderator").Bool(),
-				}
-				cr.Users = append(cr.Users, user)
-				return true
-			})
-
-			topicListResult := result.Get("topic_list")
-			cr.TopicList.CanCreateTopic = topicListResult.Get("can_create_topic").Bool()
-			cr.TopicList.MoreTopicsURL = topicListResult.Get("more_topics_url").Str
-			cr.TopicList.PerPage = int(topicListResult.Get("per_page").Int())
-
-			topicsResult := topicListResult.Get("topics")
-			topicsResult.ForEach(func(_, value gjson.Result) bool {
-				topic := discourse.Topic{
-					ID:                 int(value.Get("id").Int()),
-					Title:              value.Get("title").Str,
-					FancyTitle:         value.Get("fancy_title").Str,
-					Slug:               value.Get("slug").Str,
-					PostsCount:         int(value.Get("posts_count").Int()),
-					ReplyCount:         int(value.Get("reply_count").Int()),
-					HighestPostNumber:  int(value.Get("highest_post_number").Int()),
-					ImageURL:           value.Get("image_url").Str,
-					CreatedAt:          value.Get("created_at").Time(),
-					LastPostedAt:       value.Get("last_posted_at").Time(),
-					Bumped:             value.Get("bumped").Bool(),
-					BumpedAt:           value.Get("bumped_at").Time(),
-					Archetype:          value.Get("archetype").Str,
-					Unseen:             value.Get("unseen").Bool(),
-					LastReadPostNumber: int(value.Get("last_read_post_number").Int()),
-					Unread:             int(value.Get("unread").Int()),
-					NewPosts:           int(value.Get("new_posts").Int()),
-					UnreadPosts:        int(value.Get("unread_posts").Int()),
-					Pinned:             value.Get("pinned").Bool(),
-					Visible:            value.Get("visible").Bool(),
-					Closed:             value.Get("closed").Bool(),
-					Archived:           value.Get("archived").Bool(),
-					NotificationLevel:  int(value.Get("notification_level").Int()),
-					Bookmarked:         value.Get("bookmarked").Bool(),
-					Liked:              value.Get("liked").Bool(),
-					Views:              int(value.Get("views").Int()),
-					LikeCount:          int(value.Get("like_count").Int()),
-					LastPosterUsername: value.Get("last_poster_username").Str,
-					CategoryID:         int(value.Get("category_id").Int()),
-					// CategoryName and CategoryColor will be filled in later if categories are available
-				}
-				tags := value.Get("tags")
-				tags.ForEach(func(_, tag gjson.Result) bool {
-					topic.Tags = append(topic.Tags, tag.Str)
-					return true
-				})
-				cr.TopicList.Topics = append(cr.TopicList.Topics, topic)
-				return true
-			})
-			topicsResponse = cr
-			log.Printf("Successfully parsed latest topics from cache using gjson: %s", latestTopicsCachePath)
+		var cachedResp discourse.Response
+		if unmarshalErr := json.Unmarshal(cachedData, &cachedResp); unmarshalErr == nil {
+			if len(cachedResp.TopicList.Topics) > 0 || len(cachedResp.Users) > 0 {
+				topicsResponse = &cachedResp
+				log.Printf("Successfully parsed latest topics from cache using encoding/json: %s", latestTopicsCachePath)
+			} else {
+				log.Printf("Cached data in %s parsed but seems empty or invalid (no topics/users). Fetching from network.", latestTopicsCachePath)
+				topicsResponse = nil
+			}
 		} else {
-			log.Printf("Failed to parse cached topics from %s with gjson (result does not exist or is not valid JSON). Fetching from network.", latestTopicsCachePath)
+			log.Printf("Failed to parse cached topics from %s with encoding/json: %v. Fetching from network.", latestTopicsCachePath, unmarshalErr)
+			topicsResponse = nil
 		}
 	} else if !os.IsNotExist(err) {
 		log.Printf("Error reading cache file %s: %v. Fetching from network.", latestTopicsCachePath, err)

@@ -65,6 +65,16 @@ type topicCreatedMsg struct {
 }
 type topicCreateErrorMsg struct{ err error }
 
+type postsLoadedMsg struct {
+	posts *discourse.TopicResponse
+}
+type postsLoadErrorMsg struct{ err error }
+
+type topicsRefreshedMsg struct {
+	response *discourse.Response
+}
+type topicsRefreshErrorMsg struct{ err error }
+
 type newTopicModel struct {
 	client        *discourse.Client
 	titleInput    textinput.Model
@@ -263,20 +273,22 @@ func (m newTopicModel) View() string {
 }
 
 type Model struct {
-	List          list.Model
-	Viewport      viewport.Model
-	Client        *discourse.Client
-	Topics        []discourse.Topic
-	Ready         bool
-	Fullscreen    bool
-	Search        textinput.Model
-	Searching     bool
-	LastRefresh   time.Time
-	Width, Height int
-	InstanceURL   string
-	State         modelState
-	NewTopicForm  newTopicModel
-	StatusMessage string
+	List               list.Model
+	Viewport           viewport.Model
+	Client             *discourse.Client
+	Topics             []discourse.Topic
+	Ready              bool
+	Fullscreen         bool
+	Search             textinput.Model
+	Searching          bool
+	LastRefresh        time.Time
+	Width, Height      int
+	InstanceURL        string
+	State              modelState
+	NewTopicForm       newTopicModel
+	StatusMessage      string
+	isLoadingPosts     bool
+	isRefreshingTopics bool
 }
 
 func InitialModel(client *discourse.Client, topics []discourse.Topic) Model {
@@ -371,50 +383,66 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stateTopicList:
 		switch msg := msg.(type) {
 		case refreshMsg:
-			response, err := m.Client.RefreshTopics()
-			if err != nil {
-				log.Printf("Failed to refresh topics: %v", err)
-				return m, tea.Tick(5*time.Minute, func(t time.Time) tea.Msg {
-					return refreshMsg{}
-				})
+			if m.isRefreshingTopics {
+				return m, nil
 			}
-
-			categories, err := m.Client.GetCategories()
-			if err != nil {
-				log.Printf("Failed to fetch categories: %v", err)
-			} else {
-				categoryMap := make(map[int]struct {
-					Name  string
-					Color string
-				})
-				for _, category := range categories.CategoryList.Categories {
-					categoryMap[category.ID] = struct {
+			m.isRefreshingTopics = true
+			m.StatusMessage = "Refreshing topics..."
+			cmds = append(cmds, func() tea.Msg {
+				response, err := m.Client.RefreshTopics()
+				if err != nil {
+					return topicsRefreshErrorMsg{err: err}
+				}
+				categories, catErr := m.Client.GetCategories()
+				if catErr != nil {
+					log.Printf("Warning: failed to fetch categories during refresh: %v", catErr)
+				} else {
+					categoryMap := make(map[int]struct {
 						Name  string
 						Color string
-					}{
-						Name:  category.Name,
-						Color: category.Color,
+					})
+					for _, category := range categories.CategoryList.Categories {
+						categoryMap[category.ID] = struct {
+							Name  string
+							Color string
+						}{
+							Name:  category.Name,
+							Color: category.Color,
+						}
+					}
+					for i := range response.TopicList.Topics {
+						if cat, ok := categoryMap[response.TopicList.Topics[i].CategoryID]; ok {
+							response.TopicList.Topics[i].CategoryName = cat.Name
+							response.TopicList.Topics[i].CategoryColor = cat.Color
+						}
 					}
 				}
-
-				for i := range response.TopicList.Topics {
-					if cat, ok := categoryMap[response.TopicList.Topics[i].CategoryID]; ok {
-						response.TopicList.Topics[i].CategoryName = cat.Name
-						response.TopicList.Topics[i].CategoryColor = cat.Color
-					}
-				}
-			}
-
-			items := make([]list.Item, len(response.TopicList.Topics))
-			for i, topic := range response.TopicList.Topics {
+				return topicsRefreshedMsg{response: response}
+			})
+			return m, tea.Batch(cmds...)
+		case topicsRefreshedMsg:
+			m.isRefreshingTopics = false
+			m.StatusMessage = "Topics refreshed!"
+			items := make([]list.Item, len(msg.response.TopicList.Topics))
+			for i, topic := range msg.response.TopicList.Topics {
 				items[i] = topicItem{topic: topic}
 			}
 			m.List.SetItems(items)
-			m.Topics = response.TopicList.Topics
+			m.Topics = msg.response.TopicList.Topics
 			m.LastRefresh = time.Now()
-			return m, tea.Tick(5*time.Minute, func(t time.Time) tea.Msg {
+			cmds = append(cmds, tea.Tick(5*time.Minute, func(t time.Time) tea.Msg {
 				return refreshMsg{}
-			})
+			}))
+			return m, tea.Batch(cmds...)
+		case topicsRefreshErrorMsg:
+			m.isRefreshingTopics = false
+			m.StatusMessage = fmt.Sprintf("Error refreshing topics: %v", msg.err)
+			log.Printf("Failed to refresh topics: %v", msg.err)
+			cmds = append(cmds, tea.Tick(5*time.Minute, func(t time.Time) tea.Msg {
+				return refreshMsg{}
+			}))
+			return m, tea.Batch(cmds...)
+
 		case tea.KeyMsg:
 			if m.Searching {
 				switch msg.String() {
@@ -481,46 +509,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case "R":
-				response, err := m.Client.RefreshTopics()
-				if err != nil {
-					log.Printf("Failed to refresh topics: %v", err)
+				if m.isRefreshingTopics {
 					return m, nil
 				}
-
-				categories, err := m.Client.GetCategories()
-				if err != nil {
-					log.Printf("Failed to fetch categories: %v", err)
-				} else {
-					categoryMap := make(map[int]struct {
-						Name  string
-						Color string
-					})
-					for _, category := range categories.CategoryList.Categories {
-						categoryMap[category.ID] = struct {
+				m.isRefreshingTopics = true
+				m.StatusMessage = "Refreshing topics..."
+				cmds = append(cmds, func() tea.Msg {
+					response, err := m.Client.RefreshTopics()
+					if err != nil {
+						return topicsRefreshErrorMsg{err: err}
+					}
+					categories, catErr := m.Client.GetCategories()
+					if catErr != nil {
+						log.Printf("Warning: failed to fetch categories during refresh: %v", catErr)
+					} else {
+						categoryMap := make(map[int]struct {
 							Name  string
 							Color string
-						}{
-							Name:  category.Name,
-							Color: category.Color,
+						})
+						for _, category := range categories.CategoryList.Categories {
+							categoryMap[category.ID] = struct {
+								Name  string
+								Color string
+							}{
+								Name:  category.Name,
+								Color: category.Color,
+							}
+						}
+						for i := range response.TopicList.Topics {
+							if cat, ok := categoryMap[response.TopicList.Topics[i].CategoryID]; ok {
+								response.TopicList.Topics[i].CategoryName = cat.Name
+								response.TopicList.Topics[i].CategoryColor = cat.Color
+							}
 						}
 					}
-
-					for i := range response.TopicList.Topics {
-						if cat, ok := categoryMap[response.TopicList.Topics[i].CategoryID]; ok {
-							response.TopicList.Topics[i].CategoryName = cat.Name
-							response.TopicList.Topics[i].CategoryColor = cat.Color
-						}
-					}
-				}
-
-				items := make([]list.Item, len(response.TopicList.Topics))
-				for i, topic := range response.TopicList.Topics {
-					items[i] = topicItem{topic: topic}
-				}
-				m.List.SetItems(items)
-				m.Topics = response.TopicList.Topics
-				m.LastRefresh = time.Now()
-				return m, nil
+					return topicsRefreshedMsg{response: response}
+				})
+				return m, tea.Batch(cmds...)
 			case "esc":
 				if m.Searching {
 					m.Searching = false
@@ -550,31 +575,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				if i, ok := m.List.SelectedItem().(topicItem); ok {
-					posts, err := m.Client.GetTopicPosts(i.topic.ID)
-					if err != nil {
-						errorContentWidth := m.Viewport.Width - 2
-						if errorContentWidth < 1 {
-							errorContentWidth = 1
-						}
-						errorStyle := lipgloss.NewStyle().Width(errorContentWidth)
-						m.Viewport.SetContent(errorStyle.Render(fmt.Sprintf("Error fetching posts: %v", err)))
+					if m.isLoadingPosts {
 						return m, nil
 					}
-
-					var content strings.Builder
-					postContentWidth := m.Viewport.Width - 2
-					if postContentWidth < 1 {
-						postContentWidth = 1
+					m.isLoadingPosts = true
+					m.Viewport.SetContent("Loading posts...")
+					selectedTopicID := i.topic.ID
+					cmd = func() tea.Msg {
+						posts, err := m.Client.GetTopicPosts(selectedTopicID)
+						if err != nil {
+							return postsLoadErrorMsg{err: err}
+						}
+						return postsLoadedMsg{posts: posts}
 					}
-
-					for _, post := range posts.PostStream.Posts {
-						content.WriteString(FormatPost(post, postContentWidth))
-						content.WriteString("\n\n---\n\n")
-					}
-
-					m.Viewport.SetContent(content.String())
+					cmds = append(cmds, cmd)
 				}
 			}
+		case postsLoadedMsg:
+			m.isLoadingPosts = false
+			var content strings.Builder
+			postContentWidth := m.Viewport.Width - 2
+			if postContentWidth < 1 {
+				postContentWidth = 1
+			}
+			for _, post := range msg.posts.PostStream.Posts {
+				content.WriteString(FormatPost(post, postContentWidth))
+				content.WriteString("\n\n---\n\n")
+			}
+			m.Viewport.SetContent(content.String())
+			m.Viewport.GotoTop()
+		case postsLoadErrorMsg:
+			m.isLoadingPosts = false
+			errorContentWidth := m.Viewport.Width - 2
+			if errorContentWidth < 1 {
+				errorContentWidth = 1
+			}
+			errorStyle := lipgloss.NewStyle().Width(errorContentWidth)
+			m.Viewport.SetContent(errorStyle.Render(fmt.Sprintf("Error fetching posts: %v", msg.err)))
 		case tea.WindowSizeMsg:
 			m.Width = msg.Width
 			m.Height = msg.Height
