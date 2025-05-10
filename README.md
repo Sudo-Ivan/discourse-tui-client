@@ -77,7 +77,7 @@ discourse-tui-client --output topics.html # or .txt, .json
 
 This client interacts with Discourse forums by:
 
-1. **Cookie-based Authentication**: Instead of using API tokens, it manages authentication through browser-style cookies.
+1. **Cookie-based Authentication**: Instead of using API tokens, it manages authentication through browser-style cookies stored as `cookies.txt` in users `$HOME/.config/discourse-tui-client/cookies.txt`.
 
 2. **Direct HTTP Requests**: Communicates with Discourse instances through standard HTTP requests to endpoints like `/latest.json` and `/t/{id}.json`.
 
@@ -86,8 +86,8 @@ This client interacts with Discourse forums by:
 4. **Terminal UI**: Features a responsive terminal interface built with Bubble Tea that displays:
    - A navigable list of latest topics
    - Content viewer for reading posts
-   - Search capabilities (work-in-progress)
-   - Fullscreen mode (work-in-progess)
+   - Search capabilities
+   - Fullscreen mode
 
 5. **Customizable Colors**: Allows theme customization through a simple configuration file `colors.txt` in users `$HOME/.config/discourse-tui-client/colors.txt`.
 
