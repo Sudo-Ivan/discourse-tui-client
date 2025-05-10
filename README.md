@@ -30,6 +30,48 @@ go install github.com/Sudo-Ivan/discourse-tui-client@latest
 - [ ] Fix URLs (not showing)
 - [ ] Improve keyboard navigation
 
+## Usage
+
+### Running the client
+
+```bash
+discourse-tui-client
+```
+
+Which will then prompt you with login screen if no cookies.txt found.
+
+Arguments:
+
+```
+  -c string
+        Path to cookies file (shorthand).
+  -cookies string
+        Path to cookies file (optional).
+  -d    Enable debug logging (shorthand).
+  -debug
+        Enable debug logging.
+  -l    Logout and delete cookies (shorthand).
+  -logout
+        Logout and delete cookies.
+  -o string
+        Output posts to file (shorthand)
+  -output string
+        Output posts to file (txt, json, or html)
+  -r    Reset cache and force fresh fetch (shorthand).
+  -reset-cache
+        Reset cache and force fresh fetch.
+  -u string
+        Discourse instance URL (shorthand).
+  -url string
+        Discourse instance URL (e.g. https://forum.example.com).
+```
+
+### Extracting topics to a file
+
+```bash
+discourse-tui-client --output topics.html # or .txt, .json
+```
+
 ## How it works
 
 This client interacts with Discourse forums by:
