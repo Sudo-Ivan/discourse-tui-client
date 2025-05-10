@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/tidwall/gjson"
 
 	"github.com/Sudo-Ivan/discourse-tui-client/internal/config"
 	"github.com/Sudo-Ivan/discourse-tui-client/internal/tui"
@@ -139,7 +140,7 @@ func main() {
 	}
 
 	colorsPath := filepath.Join(appConfigDir, "colors.txt")
-	
+
 	instanceName := "placeholder"
 	if *instanceURL != "" {
 		instanceName = strings.TrimPrefix(strings.TrimPrefix(*instanceURL, "https://"), "http://")
@@ -200,7 +201,7 @@ func main() {
 			os.Exit(1)
 		}
 		log.Printf("Cookies file successfully created/found at %s after login.", defaultCookiesPath)
-		
+
 		client, err = discourse.NewClient(loginModel.GetInstanceURL(), defaultCookiesPath)
 		if err != nil {
 			log.Printf("Failed to create client with new URL: %v", err)
@@ -231,12 +232,76 @@ func main() {
 	/* #nosec G304 */
 	cachedData, err := os.ReadFile(latestTopicsCachePath)
 	if err == nil {
-		var cr discourse.Response
-		if jsonErr := json.Unmarshal(cachedData, &cr); jsonErr == nil {
-			topicsResponse = &cr
-			log.Printf("Successfully loaded latest topics from cache: %s", latestTopicsCachePath)
+		log.Printf("Attempting to load latest topics from cache: %s", latestTopicsCachePath)
+		result := gjson.ParseBytes(cachedData)
+		if result.Exists() {
+			cr := &discourse.Response{}
+
+			users := result.Get("users")
+			users.ForEach(func(_, value gjson.Result) bool {
+				user := discourse.User{
+					ID:             int(value.Get("id").Int()),
+					Username:       value.Get("username").Str,
+					Name:           value.Get("name").Str,
+					AvatarTemplate: value.Get("avatar_template").Str,
+					TrustLevel:     int(value.Get("trust_level").Int()),
+					Moderator:      value.Get("moderator").Bool(),
+				}
+				cr.Users = append(cr.Users, user)
+				return true
+			})
+
+			topicListResult := result.Get("topic_list")
+			cr.TopicList.CanCreateTopic = topicListResult.Get("can_create_topic").Bool()
+			cr.TopicList.MoreTopicsURL = topicListResult.Get("more_topics_url").Str
+			cr.TopicList.PerPage = int(topicListResult.Get("per_page").Int())
+
+			topicsResult := topicListResult.Get("topics")
+			topicsResult.ForEach(func(_, value gjson.Result) bool {
+				topic := discourse.Topic{
+					ID:                 int(value.Get("id").Int()),
+					Title:              value.Get("title").Str,
+					FancyTitle:         value.Get("fancy_title").Str,
+					Slug:               value.Get("slug").Str,
+					PostsCount:         int(value.Get("posts_count").Int()),
+					ReplyCount:         int(value.Get("reply_count").Int()),
+					HighestPostNumber:  int(value.Get("highest_post_number").Int()),
+					ImageURL:           value.Get("image_url").Str,
+					CreatedAt:          value.Get("created_at").Time(),
+					LastPostedAt:       value.Get("last_posted_at").Time(),
+					Bumped:             value.Get("bumped").Bool(),
+					BumpedAt:           value.Get("bumped_at").Time(),
+					Archetype:          value.Get("archetype").Str,
+					Unseen:             value.Get("unseen").Bool(),
+					LastReadPostNumber: int(value.Get("last_read_post_number").Int()),
+					Unread:             int(value.Get("unread").Int()),
+					NewPosts:           int(value.Get("new_posts").Int()),
+					UnreadPosts:        int(value.Get("unread_posts").Int()),
+					Pinned:             value.Get("pinned").Bool(),
+					Visible:            value.Get("visible").Bool(),
+					Closed:             value.Get("closed").Bool(),
+					Archived:           value.Get("archived").Bool(),
+					NotificationLevel:  int(value.Get("notification_level").Int()),
+					Bookmarked:         value.Get("bookmarked").Bool(),
+					Liked:              value.Get("liked").Bool(),
+					Views:              int(value.Get("views").Int()),
+					LikeCount:          int(value.Get("like_count").Int()),
+					LastPosterUsername: value.Get("last_poster_username").Str,
+					CategoryID:         int(value.Get("category_id").Int()),
+					// CategoryName and CategoryColor will be filled in later if categories are available
+				}
+				tags := value.Get("tags")
+				tags.ForEach(func(_, tag gjson.Result) bool {
+					topic.Tags = append(topic.Tags, tag.Str)
+					return true
+				})
+				cr.TopicList.Topics = append(cr.TopicList.Topics, topic)
+				return true
+			})
+			topicsResponse = cr
+			log.Printf("Successfully parsed latest topics from cache using gjson: %s", latestTopicsCachePath)
 		} else {
-			log.Printf("Failed to unmarshal cached topics from %s: %v. Fetching from network.", latestTopicsCachePath, jsonErr)
+			log.Printf("Failed to parse cached topics from %s with gjson (result does not exist or is not valid JSON). Fetching from network.", latestTopicsCachePath)
 		}
 	} else if !os.IsNotExist(err) {
 		log.Printf("Error reading cache file %s: %v. Fetching from network.", latestTopicsCachePath, err)
@@ -323,4 +388,4 @@ func main() {
 		os.Exit(1)
 	}
 	log.Println("Discourse client exited normally.")
-} 
+}
