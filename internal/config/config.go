@@ -129,4 +129,4 @@ func LoadInstance() (string, error) {
 		return "", fmt.Errorf("failed to read instances file: %w", err)
 	}
 	return strings.TrimSpace(string(data)), nil
-} 
+}

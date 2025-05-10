@@ -30,39 +30,39 @@ type User struct {
 }
 
 type Topic struct {
-	ID                  int       `json:"id"`
-	Title               string    `json:"title"`
-	FancyTitle          string    `json:"fancy_title"`
-	Slug                string    `json:"slug"`
-	PostsCount          int       `json:"posts_count"`
-	ReplyCount          int       `json:"reply_count"`
-	HighestPostNumber   int       `json:"highest_post_number"`
-	ImageURL            string    `json:"image_url"`
-	CreatedAt           time.Time `json:"created_at"`
-	LastPostedAt        time.Time `json:"last_posted_at"`
-	Bumped              bool      `json:"bumped"`
-	BumpedAt            time.Time `json:"bumped_at"`
-	Archetype           string    `json:"archetype"`
-	Unseen              bool      `json:"unseen"`
-	LastReadPostNumber  int       `json:"last_read_post_number"`
-	Unread              int       `json:"unread"`
-	NewPosts            int       `json:"new_posts"`
-	UnreadPosts         int       `json:"unread_posts"`
-	Pinned              bool      `json:"pinned"`
-	Unpinned            *bool     `json:"unpinned"`
-	Visible             bool      `json:"visible"`
-	Closed              bool      `json:"closed"`
-	Archived            bool      `json:"archived"`
-	NotificationLevel   int       `json:"notification_level"`
-	Bookmarked          bool      `json:"bookmarked"`
-	Liked               bool      `json:"liked"`
-	Tags                []string  `json:"tags"`
-	Views               int       `json:"views"`
-	LikeCount           int       `json:"like_count"`
-	LastPosterUsername  string    `json:"last_poster_username"`
-	CategoryID          int       `json:"category_id"`
-	CategoryName        string    `json:"category_name"`
-	CategoryColor       string    `json:"category_color"`
+	ID                 int       `json:"id"`
+	Title              string    `json:"title"`
+	FancyTitle         string    `json:"fancy_title"`
+	Slug               string    `json:"slug"`
+	PostsCount         int       `json:"posts_count"`
+	ReplyCount         int       `json:"reply_count"`
+	HighestPostNumber  int       `json:"highest_post_number"`
+	ImageURL           string    `json:"image_url"`
+	CreatedAt          time.Time `json:"created_at"`
+	LastPostedAt       time.Time `json:"last_posted_at"`
+	Bumped             bool      `json:"bumped"`
+	BumpedAt           time.Time `json:"bumped_at"`
+	Archetype          string    `json:"archetype"`
+	Unseen             bool      `json:"unseen"`
+	LastReadPostNumber int       `json:"last_read_post_number"`
+	Unread             int       `json:"unread"`
+	NewPosts           int       `json:"new_posts"`
+	UnreadPosts        int       `json:"unread_posts"`
+	Pinned             bool      `json:"pinned"`
+	Unpinned           *bool     `json:"unpinned"`
+	Visible            bool      `json:"visible"`
+	Closed             bool      `json:"closed"`
+	Archived           bool      `json:"archived"`
+	NotificationLevel  int       `json:"notification_level"`
+	Bookmarked         bool      `json:"bookmarked"`
+	Liked              bool      `json:"liked"`
+	Tags               []string  `json:"tags"`
+	Views              int       `json:"views"`
+	LikeCount          int       `json:"like_count"`
+	LastPosterUsername string    `json:"last_poster_username"`
+	CategoryID         int       `json:"category_id"`
+	CategoryName       string    `json:"category_name"`
+	CategoryColor      string    `json:"category_color"`
 }
 
 type TopicList struct {
@@ -74,30 +74,30 @@ type TopicList struct {
 }
 
 type Response struct {
-	Users         []User     `json:"users"`
-	PrimaryGroups []string   `json:"primary_groups"`
-	FlairGroups   []string   `json:"flair_groups"`
-	TopicList     TopicList  `json:"topic_list"`
+	Users         []User    `json:"users"`
+	PrimaryGroups []string  `json:"primary_groups"`
+	FlairGroups   []string  `json:"flair_groups"`
+	TopicList     TopicList `json:"topic_list"`
 }
 
 type Post struct {
-	ID          int       `json:"id"`
-	Name        string    `json:"name"`
-	Username    string    `json:"username"`
-	CreatedAt   time.Time `json:"created_at"`
-	Cooked      string    `json:"cooked"`
-	PostNumber  int       `json:"post_number"`
-	ReplyCount  int       `json:"reply_count"`
-	TopicID     int       `json:"topic_id"`
-	TopicSlug   string    `json:"topic_slug"`
-	Reads       int       `json:"reads"`
-	Score       float64   `json:"score"`
+	ID             int              `json:"id"`
+	Name           string           `json:"name"`
+	Username       string           `json:"username"`
+	CreatedAt      time.Time        `json:"created_at"`
+	Cooked         string           `json:"cooked"`
+	PostNumber     int              `json:"post_number"`
+	ReplyCount     int              `json:"reply_count"`
+	TopicID        int              `json:"topic_id"`
+	TopicSlug      string           `json:"topic_slug"`
+	Reads          int              `json:"reads"`
+	Score          float64          `json:"score"`
 	ActionsSummary []ActionsSummary `json:"actions_summary,omitempty"`
 }
 
 type PostStream struct {
-	Posts []Post `json:"posts"`
-	Stream []int `json:"stream"`
+	Posts  []Post `json:"posts"`
+	Stream []int  `json:"stream"`
 }
 
 type TopicResponse struct {
@@ -126,8 +126,8 @@ type Category struct {
 
 type CategoryList struct {
 	CanCreateCategory bool       `json:"can_create_category"`
-	CanCreateTopic   bool       `json:"can_create_topic"`
-	Categories       []Category `json:"categories"`
+	CanCreateTopic    bool       `json:"can_create_topic"`
+	Categories        []Category `json:"categories"`
 }
 
 type CategoryResponse struct {
@@ -379,17 +379,17 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 		postsData := initialResult.Get("post_stream.posts")
 		postsData.ForEach(func(_, value gjson.Result) bool {
 			post := Post{
-				ID:          int(value.Get("id").Int()),
-				Name:        value.Get("name").Str,
-				Username:    value.Get("username").Str,
-				CreatedAt:   value.Get("created_at").Time(),
-				Cooked:      value.Get("cooked").Str,
-				PostNumber:  int(value.Get("post_number").Int()),
-				ReplyCount:  int(value.Get("reply_count").Int()),
-				TopicID:     int(value.Get("topic_id").Int()),
-				TopicSlug:   value.Get("topic_slug").Str,
-				Reads:       int(value.Get("reads").Int()),
-				Score:       value.Get("score").Float(),
+				ID:         int(value.Get("id").Int()),
+				Name:       value.Get("name").Str,
+				Username:   value.Get("username").Str,
+				CreatedAt:  value.Get("created_at").Time(),
+				Cooked:     value.Get("cooked").Str,
+				PostNumber: int(value.Get("post_number").Int()),
+				ReplyCount: int(value.Get("reply_count").Int()),
+				TopicID:    int(value.Get("topic_id").Int()),
+				TopicSlug:  value.Get("topic_slug").Str,
+				Reads:      int(value.Get("reads").Int()),
+				Score:      value.Get("score").Float(),
 			}
 			// Parse ActionsSummary
 			actionsSummaryResult := value.Get("actions_summary")
@@ -419,17 +419,17 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 		postsData := initialResult.Get("post_stream.posts")
 		postsData.ForEach(func(_, value gjson.Result) bool {
 			post := Post{
-				ID:          int(value.Get("id").Int()),
-				Name:        value.Get("name").Str,
-				Username:    value.Get("username").Str,
-				CreatedAt:   value.Get("created_at").Time(),
-				Cooked:      value.Get("cooked").Str,
-				PostNumber:  int(value.Get("post_number").Int()),
-				ReplyCount:  int(value.Get("reply_count").Int()),
-				TopicID:     int(value.Get("topic_id").Int()),
-				TopicSlug:   value.Get("topic_slug").Str,
-				Reads:       int(value.Get("reads").Int()),
-				Score:       value.Get("score").Float(),
+				ID:         int(value.Get("id").Int()),
+				Name:       value.Get("name").Str,
+				Username:   value.Get("username").Str,
+				CreatedAt:  value.Get("created_at").Time(),
+				Cooked:     value.Get("cooked").Str,
+				PostNumber: int(value.Get("post_number").Int()),
+				ReplyCount: int(value.Get("reply_count").Int()),
+				TopicID:    int(value.Get("topic_id").Int()),
+				TopicSlug:  value.Get("topic_slug").Str,
+				Reads:      int(value.Get("reads").Int()),
+				Score:      value.Get("score").Float(),
 			}
 			actionsSummaryResult := value.Get("actions_summary")
 			actionsSummaryResult.ForEach(func(_, actionData gjson.Result) bool {
@@ -483,17 +483,17 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 	posts := result.Get("post_stream.posts")
 	posts.ForEach(func(_, value gjson.Result) bool {
 		post := Post{
-			ID:          int(value.Get("id").Int()),
-			Name:        value.Get("name").Str,
-			Username:    value.Get("username").Str,
-			CreatedAt:   value.Get("created_at").Time(),
-			Cooked:      value.Get("cooked").Str,
-			PostNumber:  int(value.Get("post_number").Int()),
-			ReplyCount:  int(value.Get("reply_count").Int()),
-			TopicID:     int(value.Get("topic_id").Int()),
-			TopicSlug:   value.Get("topic_slug").Str,
-			Reads:       int(value.Get("reads").Int()),
-			Score:       value.Get("score").Float(),
+			ID:         int(value.Get("id").Int()),
+			Name:       value.Get("name").Str,
+			Username:   value.Get("username").Str,
+			CreatedAt:  value.Get("created_at").Time(),
+			Cooked:     value.Get("cooked").Str,
+			PostNumber: int(value.Get("post_number").Int()),
+			ReplyCount: int(value.Get("reply_count").Int()),
+			TopicID:    int(value.Get("topic_id").Int()),
+			TopicSlug:  value.Get("topic_slug").Str,
+			Reads:      int(value.Get("reads").Int()),
+			Score:      value.Get("score").Float(),
 		}
 		actionsSummaryResult := value.Get("actions_summary")
 		actionsSummaryResult.ForEach(func(_, actionData gjson.Result) bool {
@@ -717,11 +717,11 @@ func (c *Client) GetCategories() (*CategoryResponse, error) {
 
 	instanceDir := filepath.Join(userCacheDir, "discourse-tui-client", "instances", strings.TrimPrefix(strings.TrimPrefix(c.baseURL, "https://"), "http://"))
 	cachePath := filepath.Join(instanceDir, "categories.json")
-	
+
 	if data, err := os.ReadFile(cachePath); err == nil {
 		result := gjson.ParseBytes(data)
 		response := &CategoryResponse{}
-		
+
 		// Parse categories
 		categories := result.Get("category_list.categories")
 		categories.ForEach(func(_, value gjson.Result) bool {
@@ -739,10 +739,10 @@ func (c *Client) GetCategories() (*CategoryResponse, error) {
 			response.CategoryList.Categories = append(response.CategoryList.Categories, category)
 			return true
 		})
-		
+
 		response.CategoryList.CanCreateCategory = result.Get("category_list.can_create_category").Bool()
 		response.CategoryList.CanCreateTopic = result.Get("category_list.can_create_topic").Bool()
-		
+
 		return response, nil
 	}
 
@@ -836,17 +836,17 @@ func (c *Client) PerformPostAction(postID int, postActionTypeID int, flagTopic b
 	// The response is the updated post object
 	result := gjson.ParseBytes(body)
 	post := Post{
-		ID:          int(result.Get("id").Int()),
-		Name:        result.Get("name").Str,
-		Username:    result.Get("username").Str,
-		CreatedAt:   result.Get("created_at").Time(),
-		Cooked:      result.Get("cooked").Str,
-		PostNumber:  int(result.Get("post_number").Int()),
-		ReplyCount:  int(result.Get("reply_count").Int()),
-		TopicID:     int(result.Get("topic_id").Int()),
-		TopicSlug:   result.Get("topic_slug").Str,
-		Reads:       int(result.Get("reads").Int()),
-		Score:       result.Get("score").Float(),
+		ID:         int(result.Get("id").Int()),
+		Name:       result.Get("name").Str,
+		Username:   result.Get("username").Str,
+		CreatedAt:  result.Get("created_at").Time(),
+		Cooked:     result.Get("cooked").Str,
+		PostNumber: int(result.Get("post_number").Int()),
+		ReplyCount: int(result.Get("reply_count").Int()),
+		TopicID:    int(result.Get("topic_id").Int()),
+		TopicSlug:  result.Get("topic_slug").Str,
+		Reads:      int(result.Get("reads").Int()),
+		Score:      result.Get("score").Float(),
 	}
 
 	actionsSummaryResult := result.Get("actions_summary")
@@ -932,4 +932,4 @@ func (c *Client) CreateTopic(title, rawContent string, categoryID int, tags []st
 	}
 
 	return &createdPost, nil
-} 
+}

@@ -39,12 +39,12 @@ func (f *TextFormatter) Format(topics *discourse.Response) ([]byte, error) {
 		content.WriteString(fmt.Sprintf("Replies: %d\n", topic.ReplyCount))
 		content.WriteString(fmt.Sprintf("Views: %d\n", topic.Views))
 		content.WriteString("\nPosts:\n")
-		
+
 		posts, err := getTopicPosts(topic.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch posts for topic %d: %w", topic.ID, err)
 		}
-		
+
 		for _, post := range posts.PostStream.Posts {
 			content.WriteString(fmt.Sprintf("\nPost #%d by %s (%s)\n", post.PostNumber, post.Name, post.Username))
 			content.WriteString(fmt.Sprintf("Posted: %s\n", post.CreatedAt.Format("2006-01-02 15:04:05")))
@@ -82,7 +82,7 @@ func (f *HTMLFormatter) Format(topics *discourse.Response) ([]byte, error) {
 	for _, topic := range topics.TopicList.Topics {
 		content.WriteString(fmt.Sprintf(`<div class="topic">
     <h2>%s</h2>`, topic.Title))
-		
+
 		if topic.CategoryName != "" {
 			content.WriteString(fmt.Sprintf(`<div class="category">Category: %s</div>`, topic.CategoryName))
 		}
@@ -94,12 +94,12 @@ func (f *HTMLFormatter) Format(topics *discourse.Response) ([]byte, error) {
     Replies: %d<br>
     Views: %d
 </div>`, topic.CreatedAt.Format("2006-01-02 15:04:05"), topic.ReplyCount, topic.Views))
-		
+
 		posts, err := getTopicPosts(topic.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch posts for topic %d: %w", topic.ID, err)
 		}
-		
+
 		content.WriteString(`<div class="posts">`)
 		for _, post := range posts.PostStream.Posts {
 			content.WriteString(fmt.Sprintf(`<div class="post">
@@ -109,8 +109,8 @@ func (f *HTMLFormatter) Format(topics *discourse.Response) ([]byte, error) {
         Reads: %d | Score: %.1f
     </div>
     <div class="content">%s</div>
-</div>`, post.PostNumber, post.Name, post.Username, 
-				post.CreatedAt.Format("2006-01-02 15:04:05"), 
+</div>`, post.PostNumber, post.Name, post.Username,
+				post.CreatedAt.Format("2006-01-02 15:04:05"),
 				post.Reads, post.Score, post.Cooked))
 		}
 		content.WriteString(`</div></div>`)
@@ -149,4 +149,4 @@ func WriteToFile(path string, topics *discourse.Response) error {
 	}
 
 	return nil
-} 
+}

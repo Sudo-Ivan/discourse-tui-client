@@ -29,19 +29,19 @@ type topicItem struct {
 func (i topicItem) Title() string {
 	var title strings.Builder
 	title.WriteString(i.topic.Title)
-	
+
 	if i.topic.CategoryName != "" {
 		title.WriteString(" [")
 		title.WriteString(i.topic.CategoryName)
 		title.WriteString("]")
 	}
-	
+
 	if len(i.topic.Tags) > 0 {
 		title.WriteString(" {")
 		title.WriteString(strings.Join(i.topic.Tags, ", "))
 		title.WriteString("}")
 	}
-	
+
 	return title.String()
 }
 
@@ -654,9 +654,9 @@ func (m Model) View() string {
 			instanceHeader,
 			lipgloss.NewStyle().
 				Width(m.Width).
-				Height(m.Height - 4).
+				Height(m.Height-4).
 				MaxWidth(m.Width).
-				MaxHeight(m.Height - 4).
+				MaxHeight(m.Height-4).
 				Render(m.Viewport.View()),
 			help,
 		)
@@ -721,7 +721,7 @@ func FormatPost(post discourse.Post, contentWidth int) string {
 	var renderedParagraphs []string
 	for _, paraStr := range paragraphsSource {
 		renderedBlock := contentWrappingStyle.Render(paraStr)
-		renderedBlock = strings.TrimRight(renderedBlock, "\n") 
+		renderedBlock = strings.TrimRight(renderedBlock, "\n")
 		renderedParagraphs = append(renderedParagraphs, renderedBlock)
 	}
 	wrappedPostBody := strings.Join(renderedParagraphs, "\n\n")
@@ -916,4 +916,4 @@ func (m loginModel) View() string {
 	s.WriteString("\n\nPress Tab/Shift+Tab to switch fields, Enter to submit, Esc to quit") // Updated help text for login
 
 	return s.String()
-} 
+}

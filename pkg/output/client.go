@@ -4,8 +4,8 @@
 package output
 
 import (
-	"github.com/Sudo-Ivan/discourse-tui-client/pkg/discourse"
 	"fmt"
+	"github.com/Sudo-Ivan/discourse-tui-client/pkg/discourse"
 )
 
 var client *discourse.Client
@@ -19,4 +19,4 @@ func getTopicPosts(topicID int) (*discourse.TopicResponse, error) {
 		return nil, fmt.Errorf("client not set")
 	}
 	return client.GetTopicPosts(topicID)
-} 
+}
