@@ -444,12 +444,26 @@ func FormatPost(post discourse.Post, contentWidth int) string {
 		post.Reads,
 		post.Score)
 
+	var likeInfo string
+	for _, action := range post.ActionsSummary {
+		if action.ID == 2 { // 2 is usually the ID for 'like'
+			likeCount := action.Count
+			if action.Acted {
+				likeInfo = fmt.Sprintf("Likes: %d (You liked this)", likeCount)
+			} else {
+				likeInfo = fmt.Sprintf("Likes: %d", likeCount)
+			}
+			break
+		}
+	}
+
 	return strings.Join([]string{
 		postHeader,
 		"",
 		wrappedPostBody,
 		"",
 		postFooter,
+		likeInfo,
 	}, "\n")
 }
 

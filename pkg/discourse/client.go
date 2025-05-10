@@ -90,6 +90,7 @@ type Post struct {
 	TopicSlug   string    `json:"topic_slug"`
 	Reads       int       `json:"reads"`
 	Score       float64   `json:"score"`
+	ActionsSummary []ActionsSummary `json:"actions_summary,omitempty"`
 }
 
 type PostStream struct {
@@ -99,6 +100,13 @@ type PostStream struct {
 
 type TopicResponse struct {
 	PostStream PostStream `json:"post_stream"`
+}
+
+type ActionsSummary struct {
+	ID      int  `json:"id"`
+	Count   int  `json:"count"`
+	Acted   bool `json:"acted"`
+	CanUndo bool `json:"can_undo"`
 }
 
 type Category struct {
@@ -111,7 +119,7 @@ type Category struct {
 	PostCount   int    `json:"post_count"`
 	Position    int    `json:"position"`
 	Description string `json:"description"`
-	Topics      []Topic `json:"topics"`
+	// Topics      []Topic `json:"topics"` // This field is problematic for categories.json parsing if not excluded or handled
 }
 
 type CategoryList struct {
@@ -351,22 +359,11 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 	initialResult := gjson.ParseBytes(initialBody)
 	postStreamIDsResult := initialResult.Get("post_stream.stream")
 	if !postStreamIDsResult.Exists() {
-		return nil, fmt.Errorf("post_stream.stream not found in initial topic response")
-	}
-
-	var postIDs []int
-	for _, idEntry := range postStreamIDsResult.Array() {
-		postIDs = append(postIDs, int(idEntry.Int()))
-	}
-
-	if len(postIDs) == 0 {
-		// If there are no post IDs, return an empty response or handle as appropriate
-		// For now, we can assume the existing behavior for topics with no posts from stream
-		// or return an empty PostStream.
-		// Let's try to parse the initial body as if it might contain posts directly (for very short topics)
+		// If post_stream.stream doesn't exist, try to parse posts directly from post_stream.posts
+		// This handles cases where a topic might be very short or structured differently.
 		response := &TopicResponse{}
-		posts := initialResult.Get("post_stream.posts")
-		posts.ForEach(func(_, value gjson.Result) bool {
+		postsData := initialResult.Get("post_stream.posts")
+		postsData.ForEach(func(_, value gjson.Result) bool {
 			post := Post{
 				ID:          int(value.Get("id").Int()),
 				Name:        value.Get("name").Str,
@@ -380,6 +377,59 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 				Reads:       int(value.Get("reads").Int()),
 				Score:       value.Get("score").Float(),
 			}
+			// Parse ActionsSummary
+			actionsSummaryResult := value.Get("actions_summary")
+			actionsSummaryResult.ForEach(func(_, actionData gjson.Result) bool {
+				action := ActionsSummary{
+					ID:      int(actionData.Get("id").Int()),
+					Count:   int(actionData.Get("count").Int()),
+					Acted:   actionData.Get("acted").Bool(),
+					CanUndo: actionData.Get("can_undo").Bool(),
+				}
+				post.ActionsSummary = append(post.ActionsSummary, action)
+				return true
+			})
+			response.PostStream.Posts = append(response.PostStream.Posts, post)
+			return true
+		})
+		return response, nil
+	}
+
+	var postIDs []int
+	for _, idEntry := range postStreamIDsResult.Array() {
+		postIDs = append(postIDs, int(idEntry.Int()))
+	}
+
+	if len(postIDs) == 0 {
+		// If there are no post IDs in the stream, parse posts from initialResult.post_stream.posts if they exist
+		response := &TopicResponse{}
+		postsData := initialResult.Get("post_stream.posts") // This is the part for very short topics
+		postsData.ForEach(func(_, value gjson.Result) bool {
+			post := Post{
+				ID:          int(value.Get("id").Int()),
+				Name:        value.Get("name").Str,
+				Username:    value.Get("username").Str,
+				CreatedAt:   value.Get("created_at").Time(),
+				Cooked:      value.Get("cooked").Str,
+				PostNumber:  int(value.Get("post_number").Int()),
+				ReplyCount:  int(value.Get("reply_count").Int()),
+				TopicID:     int(value.Get("topic_id").Int()),
+				TopicSlug:   value.Get("topic_slug").Str,
+				Reads:       int(value.Get("reads").Int()),
+				Score:       value.Get("score").Float(),
+			}
+			// Parse ActionsSummary
+			actionsSummaryResult := value.Get("actions_summary")
+			actionsSummaryResult.ForEach(func(_, actionData gjson.Result) bool {
+				action := ActionsSummary{
+					ID:      int(actionData.Get("id").Int()),
+					Count:   int(actionData.Get("count").Int()),
+					Acted:   actionData.Get("acted").Bool(),
+					CanUndo: actionData.Get("can_undo").Bool(),
+				}
+				post.ActionsSummary = append(post.ActionsSummary, action)
+				return true
+			})
 			response.PostStream.Posts = append(response.PostStream.Posts, post)
 			return true
 		})
@@ -437,6 +487,18 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 			Reads:       int(value.Get("reads").Int()),
 			Score:       value.Get("score").Float(),
 		}
+		// Parse ActionsSummary
+		actionsSummaryResult := value.Get("actions_summary")
+		actionsSummaryResult.ForEach(func(_, actionData gjson.Result) bool {
+			action := ActionsSummary{
+				ID:      int(actionData.Get("id").Int()),
+				Count:   int(actionData.Get("count").Int()),
+				Acted:   actionData.Get("acted").Bool(),
+				CanUndo: actionData.Get("can_undo").Bool(),
+			}
+			post.ActionsSummary = append(post.ActionsSummary, action)
+			return true
+		})
 		response.PostStream.Posts = append(response.PostStream.Posts, post)
 		return true
 	})
@@ -728,4 +790,71 @@ func (c *Client) GetCategories() (*CategoryResponse, error) {
 	response.CategoryList.CanCreateTopic = result.Get("category_list.can_create_topic").Bool()
 
 	return response, nil
+}
+
+func (c *Client) PerformPostAction(postID int, postActionTypeID int, flagTopic bool) (*Post, error) {
+	csrfToken, err := c.GetCSRFToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get CSRF token for post action: %w", err)
+	}
+
+	data := url.Values{}
+	data.Set("id", fmt.Sprintf("%d", postID))
+	data.Set("post_action_type_id", fmt.Sprintf("%d", postActionTypeID))
+	data.Set("flag_topic", fmt.Sprintf("%t", flagTopic))
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/post_actions", c.baseURL), strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create post action request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+	req.Header.Set("X-CSRF-Token", csrfToken)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	req.Header.Set("Accept", "application/json, text/javascript, */*; q=0.01") // Added based on typical Discourse requests
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to perform post action: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read post action response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("post action API error: %s - %s", resp.Status, string(body))
+	}
+
+	// The response is the updated post object
+	result := gjson.ParseBytes(body)
+	post := Post{
+		ID:          int(result.Get("id").Int()),
+		Name:        result.Get("name").Str,
+		Username:    result.Get("username").Str,
+		CreatedAt:   result.Get("created_at").Time(),
+		Cooked:      result.Get("cooked").Str,
+		PostNumber:  int(result.Get("post_number").Int()),
+		ReplyCount:  int(result.Get("reply_count").Int()),
+		TopicID:     int(result.Get("topic_id").Int()),
+		TopicSlug:   result.Get("topic_slug").Str,
+		Reads:       int(result.Get("reads").Int()),
+		Score:       result.Get("score").Float(),
+	}
+
+	actionsSummaryResult := result.Get("actions_summary")
+	actionsSummaryResult.ForEach(func(_, actionData gjson.Result) bool {
+		action := ActionsSummary{
+			ID:      int(actionData.Get("id").Int()),
+			Count:   int(actionData.Get("count").Int()),
+			Acted:   actionData.Get("acted").Bool(),
+			CanUndo: actionData.Get("can_undo").Bool(),
+		}
+		post.ActionsSummary = append(post.ActionsSummary, action)
+		return true
+	})
+
+	return &post, nil
 } 
