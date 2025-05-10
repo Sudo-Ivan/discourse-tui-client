@@ -233,6 +233,33 @@ func (c *Client) GetLatestTopics() (*Response, error) {
 		return nil, fmt.Errorf("failed to decode response: %v", err)
 	}
 
+	// Fetch and map categories
+	categories, err := c.GetCategories()
+	if err != nil {
+		log.Printf("Warning: failed to fetch categories: %v", err)
+	} else {
+		categoryMap := make(map[int]struct {
+			Name  string
+			Color string
+		})
+		for _, category := range categories.CategoryList.Categories {
+			categoryMap[category.ID] = struct {
+				Name  string
+				Color string
+			}{
+				Name:  category.Name,
+				Color: category.Color,
+			}
+		}
+
+		for i := range response.TopicList.Topics {
+			if cat, ok := categoryMap[response.TopicList.Topics[i].CategoryID]; ok {
+				response.TopicList.Topics[i].CategoryName = cat.Name
+				response.TopicList.Topics[i].CategoryColor = cat.Color
+			}
+		}
+	}
+
 	return &response, nil
 }
 
