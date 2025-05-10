@@ -5,8 +5,9 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 	"log"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -261,7 +262,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if i, ok := m.List.SelectedItem().(topicItem); ok {
 				posts, err := m.Client.GetTopicPosts(i.topic.ID)
 				if err != nil {
-					// Calculate width for error message, similar to post content
 					errorContentWidth := m.Viewport.Width - 2
 					if errorContentWidth < 1 {
 						errorContentWidth = 1
@@ -272,15 +272,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				var content strings.Builder
-				// Calculate usable width for post content inside the viewport.
-				// Viewport's border (RoundedBorder) takes 1 char on left and 1 on right.
 				postContentWidth := m.Viewport.Width - 2
 				if postContentWidth < 1 {
-					postContentWidth = 1 // Ensure at least 1 char width for lipgloss.
+					postContentWidth = 1
 				}
 
 				for _, post := range posts.PostStream.Posts {
-					// Pass the calculated width to FormatPost.
 					content.WriteString(FormatPost(post, postContentWidth))
 					content.WriteString("\n\n---\n\n")
 				}
@@ -330,14 +327,12 @@ func (m Model) View() string {
 		return "\nInitializing..."
 	}
 
-	// Calculate dynamic heights with more precise spacing
 	headerHeight := 2
 	helpHeight := 2
-	availableHeight := m.Height - headerHeight - helpHeight - 2 // -2 for margins
-	listHeight := (availableHeight * 2) / 3 // Give list more space
+	availableHeight := m.Height - headerHeight - helpHeight - 2
+	listHeight := (availableHeight * 2) / 3
 	viewportHeight := availableHeight - listHeight
 
-	// Style the header with minimal padding
 	instanceHeader := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("62")).
@@ -348,7 +343,6 @@ func (m Model) View() string {
 		Align(lipgloss.Center).
 		Render(m.InstanceURL)
 
-	// Style the help text with subtle color
 	help := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240")).
 		Padding(0, 1).
@@ -360,7 +354,7 @@ func (m Model) View() string {
 			instanceHeader,
 			lipgloss.NewStyle().
 				Width(m.Width).
-				Height(m.Height - 4). // Just adjust height to use full space minus header and help
+				Height(m.Height - 4).
 				MaxWidth(m.Width).
 				MaxHeight(m.Height - 4).
 				Render(m.Viewport.View()),
@@ -368,10 +362,9 @@ func (m Model) View() string {
 		)
 	}
 
-	// Set list and viewport dimensions
-	m.List.SetWidth(m.Width - 2) // Account for borders
+	m.List.SetWidth(m.Width - 2)
 	m.List.SetHeight(listHeight)
-	m.Viewport.Width = m.Width - 2 // Account for borders
+	m.Viewport.Width = m.Width - 2
 	m.Viewport.Height = viewportHeight
 
 	var view string
@@ -406,26 +399,58 @@ func (m Model) View() string {
 
 func FormatPost(post discourse.Post, contentWidth int) string {
 	p := bluemonday.StrictPolicy()
-	// Sanitize the HTML content to plain text first.
-	plainTextContent := p.Sanitize(post.Cooked)
+	sanitizedContent := p.Sanitize(post.Cooked)
 
-	// Style for wrapping the main content body.
-	// Ensure contentWidth is at least 1 to avoid issues with lipgloss.Width(0) or negative.
-	// This check is now primarily handled at the call site, but good for robustness.
+	text := strings.ReplaceAll(sanitizedContent, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			lines[i] = ""
+		}
+	}
+	text = strings.Join(lines, "\n")
+
+	multipleNewlinesRegex := regexp.MustCompile(`\n{3,}`)
+	text = multipleNewlinesRegex.ReplaceAllString(text, "\n\n")
+
+	text = strings.TrimSpace(text)
+
 	if contentWidth < 1 {
 		contentWidth = 1
 	}
 	contentWrappingStyle := lipgloss.NewStyle().Width(contentWidth)
-	wrappedPostBody := contentWrappingStyle.Render(plainTextContent)
 
-	return fmt.Sprintf("Post #%d by %s (%s)\nPosted: %s\n\n%s\n\nReads: %d | Score: %.1f",
+	paragraphsSource := strings.Split(text, "\n\n")
+	var renderedParagraphs []string
+	for _, paraStr := range paragraphsSource {
+		trimmedParaStr := strings.TrimSpace(paraStr)
+		if trimmedParaStr != "" {
+			renderedBlock := contentWrappingStyle.Render(trimmedParaStr)
+			renderedBlock = strings.TrimRight(renderedBlock, "\n") 
+			renderedParagraphs = append(renderedParagraphs, renderedBlock)
+		}
+	}
+	wrappedPostBody := strings.Join(renderedParagraphs, "\n\n")
+
+	postHeader := fmt.Sprintf("Post #%d by %s (%s)\nPosted: %s",
 		post.PostNumber,
 		post.Name,
 		post.Username,
-		post.CreatedAt.Format("2006-01-02 15:04:05"),
-		wrappedPostBody, // Use the pre-wrapped post body.
+		post.CreatedAt.Format("2006-01-02 15:04:05"))
+
+	postFooter := fmt.Sprintf("Reads: %d | Score: %.1f",
 		post.Reads,
 		post.Score)
+
+	return strings.Join([]string{
+		postHeader,
+		"",
+		wrappedPostBody,
+		"",
+		postFooter,
+	}, "\n")
 }
 
 type loginModel struct {
