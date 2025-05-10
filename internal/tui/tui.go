@@ -24,8 +24,29 @@ type topicItem struct {
 	topic discourse.Topic
 }
 
-func (i topicItem) Title() string       { return i.topic.Title }
-func (i topicItem) Description() string { return fmt.Sprintf("%d replies • %d views", i.topic.ReplyCount, i.topic.Views) }
+func (i topicItem) Title() string {
+	var title strings.Builder
+	title.WriteString(i.topic.Title)
+	
+	if i.topic.CategoryName != "" {
+		title.WriteString(" [")
+		title.WriteString(i.topic.CategoryName)
+		title.WriteString("]")
+	}
+	
+	if len(i.topic.Tags) > 0 {
+		title.WriteString(" {")
+		title.WriteString(strings.Join(i.topic.Tags, ", "))
+		title.WriteString("}")
+	}
+	
+	return title.String()
+}
+
+func (i topicItem) Description() string {
+	return fmt.Sprintf("%d replies • %d views", i.topic.ReplyCount, i.topic.Views)
+}
+
 func (i topicItem) FilterValue() string { return i.topic.Title }
 
 type Model struct {
@@ -38,6 +59,8 @@ type Model struct {
 	Search     textinput.Model
 	Searching  bool
 	LastRefresh time.Time
+	Width      int
+	Height     int
 }
 
 func InitialModel(client *discourse.Client, topics []discourse.Topic) Model {
@@ -102,6 +125,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return refreshMsg{}
 			})
 		}
+
+		categories, err := m.Client.GetCategories()
+		if err != nil {
+			log.Printf("Failed to fetch categories: %v", err)
+		} else {
+			categoryMap := make(map[int]struct {
+				Name  string
+				Color string
+			})
+			for _, category := range categories.CategoryList.Categories {
+				categoryMap[category.ID] = struct {
+					Name  string
+					Color string
+				}{
+					Name:  category.Name,
+					Color: category.Color,
+				}
+			}
+
+			for i := range response.TopicList.Topics {
+				if cat, ok := categoryMap[response.TopicList.Topics[i].CategoryID]; ok {
+					response.TopicList.Topics[i].CategoryName = cat.Name
+					response.TopicList.Topics[i].CategoryColor = cat.Color
+				}
+			}
+		}
+
 		items := make([]list.Item, len(response.TopicList.Topics))
 		for i, topic := range response.TopicList.Topics {
 			items[i] = topicItem{topic: topic}
@@ -119,8 +169,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f":
 			m.Fullscreen = !m.Fullscreen
 			if m.Fullscreen {
-				m.Viewport.Width = m.Viewport.Width
-				m.Viewport.Height = m.Viewport.Height
+				m.Viewport.Width = m.Width
+				m.Viewport.Height = m.Height
+			} else {
+				listHeight := m.Height / 2
+				m.List.SetWidth(m.Width)
+				m.List.SetHeight(listHeight)
+				m.Viewport.Width = m.Width
+				m.Viewport.Height = m.Height - listHeight - 1
 			}
 			return m, nil
 		case "/":
@@ -135,6 +191,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				log.Printf("Failed to refresh topics: %v", err)
 				return m, nil
 			}
+
+			categories, err := m.Client.GetCategories()
+			if err != nil {
+				log.Printf("Failed to fetch categories: %v", err)
+			} else {
+				categoryMap := make(map[int]struct {
+					Name  string
+					Color string
+				})
+				for _, category := range categories.CategoryList.Categories {
+					categoryMap[category.ID] = struct {
+						Name  string
+						Color string
+					}{
+						Name:  category.Name,
+						Color: category.Color,
+					}
+				}
+
+				for i := range response.TopicList.Topics {
+					if cat, ok := categoryMap[response.TopicList.Topics[i].CategoryID]; ok {
+						response.TopicList.Topics[i].CategoryName = cat.Name
+						response.TopicList.Topics[i].CategoryColor = cat.Color
+					}
+				}
+			}
+
 			items := make([]list.Item, len(response.TopicList.Topics))
 			for i, topic := range response.TopicList.Topics {
 				items[i] = topicItem{topic: topic}
@@ -188,21 +271,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case tea.WindowSizeMsg:
+		m.Width = msg.Width
+		m.Height = msg.Height
+		
 		if !m.Ready {
-			if m.Fullscreen {
-				m.Viewport.Width = msg.Width
-				m.Viewport.Height = msg.Height
-			} else {
-				listHeight := msg.Height / 2
-				m.List.SetWidth(msg.Width)
-				m.List.SetHeight(listHeight)
-				m.Viewport.Width = msg.Width
-				m.Viewport.Height = msg.Height - listHeight - 1
-			}
 			m.Ready = true
-		} else if m.Fullscreen {
+		}
+
+		if m.Fullscreen {
 			m.Viewport.Width = msg.Width
 			m.Viewport.Height = msg.Height
+		} else {
+			listHeight := msg.Height / 2
+			m.List.SetWidth(msg.Width)
+			m.List.SetHeight(listHeight)
+			m.Viewport.Width = msg.Width
+			m.Viewport.Height = msg.Height - listHeight - 1
 		}
 	}
 
@@ -230,8 +314,10 @@ func (m Model) View() string {
 
 	if m.Fullscreen {
 		return lipgloss.NewStyle().
-			Width(m.Viewport.Width).
-			Height(m.Viewport.Height).
+			Width(m.Width).
+			Height(m.Height).
+			MaxWidth(m.Width).
+			MaxHeight(m.Height).
 			Render(m.Viewport.View())
 	}
 

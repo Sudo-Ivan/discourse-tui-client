@@ -18,6 +18,7 @@ import (
 	"github.com/Sudo-Ivan/discourse-tui-client/internal/config"
 	"github.com/Sudo-Ivan/discourse-tui-client/internal/tui"
 	"github.com/Sudo-Ivan/discourse-tui-client/pkg/discourse"
+	"github.com/Sudo-Ivan/discourse-tui-client/pkg/output"
 )
 
 func setupLogging() (*os.File, error) {
@@ -45,10 +46,38 @@ func main() {
 	debug := flag.Bool("debug", false, "Enable debug logging.")
 	flag.BoolVar(debug, "d", false, "Enable debug logging (shorthand).")
 	cookiesPath := flag.String("cookies", "", "Path to cookies file (optional).")
+	flag.StringVar(cookiesPath, "c", "", "Path to cookies file (shorthand).")
 	instanceURL := flag.String("url", "", "Discourse instance URL (e.g. https://forum.example.com).")
-	flag.BoolVar(debug, "u", false, "Discourse instance URL (shorthand).")
+	flag.StringVar(instanceURL, "u", "", "Discourse instance URL (shorthand).")
 	logout := flag.Bool("logout", false, "Logout and delete cookies.")
+	flag.BoolVar(logout, "l", false, "Logout and delete cookies (shorthand).")
+	resetCache := flag.Bool("reset-cache", false, "Reset cache and force fresh fetch.")
+	flag.BoolVar(resetCache, "r", false, "Reset cache and force fresh fetch (shorthand).")
+	outputPath := flag.String("output", "", "Output posts to file (txt, json, or html)")
+	flag.StringVar(outputPath, "o", "", "Output posts to file (shorthand)")
 	flag.Parse()
+
+	if *outputPath != "" {
+		if !strings.HasSuffix(*outputPath, ".txt") && !strings.HasSuffix(*outputPath, ".json") && !strings.HasSuffix(*outputPath, ".html") {
+			fmt.Println("Output file must end with .txt, .json, or .html")
+			os.Exit(1)
+		}
+	}
+
+	if *resetCache {
+		userCacheDir, err := os.UserCacheDir()
+		if err != nil {
+			fmt.Printf("Failed to get user cache directory: %v\n", err)
+			os.Exit(1)
+		}
+		cacheDir := filepath.Join(userCacheDir, "discourse-tui-client", "instances")
+		if err := os.RemoveAll(cacheDir); err != nil {
+			fmt.Printf("Failed to reset cache: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("Cache reset successfully.")
+		os.Exit(0)
+	}
 
 	if *logout {
 		userConfigDir, err := os.UserConfigDir()
@@ -181,6 +210,13 @@ func main() {
 		instanceName = strings.TrimPrefix(strings.TrimPrefix(loginModel.GetInstanceURL(), "https://"), "http://")
 		latestTopicsCachePath = filepath.Join(appCacheDir, "instances", instanceName, "latest.json")
 		log.Printf("Updated latest topics cache path: %s", latestTopicsCachePath)
+
+		categories, err := client.GetCategories()
+		if err != nil {
+			log.Printf("Warning: Failed to fetch categories after login: %v", err)
+		} else {
+			log.Printf("Successfully fetched %d categories after login", len(categories.CategoryList.Categories))
+		}
 	}
 
 	if err := client.LoadCookies(defaultCookiesPath); err != nil {
@@ -218,6 +254,32 @@ func main() {
 		}
 		topicsResponse = networkResponse
 
+		categories, err := client.GetCategories()
+		if err != nil {
+			log.Printf("Warning: failed to fetch categories: %v", err)
+		} else {
+			categoryMap := make(map[int]struct {
+				Name  string
+				Color string
+			})
+			for _, category := range categories.CategoryList.Categories {
+				categoryMap[category.ID] = struct {
+					Name  string
+					Color string
+				}{
+					Name:  category.Name,
+					Color: category.Color,
+				}
+			}
+
+			for i := range topicsResponse.TopicList.Topics {
+				if cat, ok := categoryMap[topicsResponse.TopicList.Topics[i].CategoryID]; ok {
+					topicsResponse.TopicList.Topics[i].CategoryName = cat.Name
+					topicsResponse.TopicList.Topics[i].CategoryColor = cat.Color
+				}
+			}
+		}
+
 		jsonData, marshalErr := json.MarshalIndent(topicsResponse, "", "  ")
 		if marshalErr == nil {
 			if writeErr := os.WriteFile(latestTopicsCachePath, jsonData, 0600); writeErr == nil {
@@ -234,6 +296,17 @@ func main() {
 		log.Println("No topics found after attempting cache and network fetch. Exiting.")
 		fmt.Println("No topics found. Please check your connection and ensure you are logged in correctly.")
 		os.Exit(1)
+	}
+
+	if *outputPath != "" {
+		output.SetClient(client)
+		if err := output.WriteToFile(*outputPath, topicsResponse); err != nil {
+			log.Printf("Failed to write output file: %v", err)
+			fmt.Printf("Failed to write output file: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Successfully wrote output to %s\n", *outputPath)
+		os.Exit(0)
 	}
 
 	log.Printf("Using %d topics for TUI", len(topicsResponse.TopicList.Topics))

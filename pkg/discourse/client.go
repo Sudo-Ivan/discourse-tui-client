@@ -58,6 +58,8 @@ type Topic struct {
 	LikeCount           int       `json:"like_count"`
 	LastPosterUsername  string    `json:"last_poster_username"`
 	CategoryID          int       `json:"category_id"`
+	CategoryName        string    `json:"category_name"`
+	CategoryColor       string    `json:"category_color"`
 }
 
 type TopicList struct {
@@ -95,6 +97,29 @@ type PostStream struct {
 
 type TopicResponse struct {
 	PostStream PostStream `json:"post_stream"`
+}
+
+type Category struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+	TextColor   string `json:"text_color"`
+	Slug        string `json:"slug"`
+	TopicCount  int    `json:"topic_count"`
+	PostCount   int    `json:"post_count"`
+	Position    int    `json:"position"`
+	Description string `json:"description"`
+	Topics      []Topic `json:"topics"`
+}
+
+type CategoryList struct {
+	CanCreateCategory bool       `json:"can_create_category"`
+	CanCreateTopic   bool       `json:"can_create_topic"`
+	Categories       []Category `json:"categories"`
+}
+
+type CategoryResponse struct {
+	CategoryList CategoryList `json:"category_list"`
 }
 
 type Client struct {
@@ -358,6 +383,54 @@ func (c *Client) RefreshTopics() (*Response, error) {
 	}
 
 	var response Response
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	return &response, nil
+}
+
+func (c *Client) GetCategories() (*CategoryResponse, error) {
+	userCacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cache directory: %v", err)
+	}
+
+	instanceDir := filepath.Join(userCacheDir, "discourse-tui-client", "instances", strings.TrimPrefix(strings.TrimPrefix(c.baseURL, "https://"), "http://"))
+	cachePath := filepath.Join(instanceDir, "categories.json")
+	
+	if data, err := os.ReadFile(cachePath); err == nil {
+		var response CategoryResponse
+		if err := json.Unmarshal(data, &response); err == nil {
+			return &response, nil
+		}
+	}
+
+	resp, err := c.client.Get(fmt.Sprintf("%s/categories.json", c.baseURL))
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch categories: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error: %s - %s", resp.Status, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	if err := os.MkdirAll(instanceDir, 0750); err != nil {
+		log.Printf("Warning: failed to create instance cache directory: %v", err)
+	} else {
+		if err := os.WriteFile(cachePath, body, 0600); err != nil {
+			log.Printf("Warning: failed to save categories to cache: %v", err)
+		}
+	}
+
+	var response CategoryResponse
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %v", err)
 	}
