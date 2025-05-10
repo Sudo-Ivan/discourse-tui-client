@@ -4,7 +4,6 @@
 package discourse
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -15,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/tidwall/gjson"
 )
 
 type User struct {
@@ -228,10 +229,75 @@ func (c *Client) GetLatestTopics() (*Response, error) {
 		}
 	}
 
-	var response Response
-	if err := json.Unmarshal(body, &response); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
-	}
+	result := gjson.ParseBytes(body)
+	response := &Response{}
+
+	// Parse users
+	users := result.Get("users")
+	users.ForEach(func(_, value gjson.Result) bool {
+		user := User{
+			ID:             int(value.Get("id").Int()),
+			Username:       value.Get("username").Str,
+			Name:           value.Get("name").Str,
+			AvatarTemplate: value.Get("avatar_template").Str,
+			TrustLevel:     int(value.Get("trust_level").Int()),
+			Moderator:      value.Get("moderator").Bool(),
+		}
+		response.Users = append(response.Users, user)
+		return true
+	})
+
+	// Parse topic list
+	topicList := result.Get("topic_list")
+	response.TopicList.CanCreateTopic = topicList.Get("can_create_topic").Bool()
+	response.TopicList.MoreTopicsURL = topicList.Get("more_topics_url").Str
+	response.TopicList.PerPage = int(topicList.Get("per_page").Int())
+
+	// Parse topics
+	topics := topicList.Get("topics")
+	topics.ForEach(func(_, value gjson.Result) bool {
+		topic := Topic{
+			ID:                 int(value.Get("id").Int()),
+			Title:              value.Get("title").Str,
+			FancyTitle:         value.Get("fancy_title").Str,
+			Slug:               value.Get("slug").Str,
+			PostsCount:         int(value.Get("posts_count").Int()),
+			ReplyCount:         int(value.Get("reply_count").Int()),
+			HighestPostNumber:  int(value.Get("highest_post_number").Int()),
+			ImageURL:           value.Get("image_url").Str,
+			CreatedAt:          value.Get("created_at").Time(),
+			LastPostedAt:       value.Get("last_posted_at").Time(),
+			Bumped:             value.Get("bumped").Bool(),
+			BumpedAt:           value.Get("bumped_at").Time(),
+			Archetype:          value.Get("archetype").Str,
+			Unseen:             value.Get("unseen").Bool(),
+			LastReadPostNumber: int(value.Get("last_read_post_number").Int()),
+			Unread:             int(value.Get("unread").Int()),
+			NewPosts:           int(value.Get("new_posts").Int()),
+			UnreadPosts:        int(value.Get("unread_posts").Int()),
+			Pinned:             value.Get("pinned").Bool(),
+			Visible:            value.Get("visible").Bool(),
+			Closed:             value.Get("closed").Bool(),
+			Archived:           value.Get("archived").Bool(),
+			NotificationLevel:  int(value.Get("notification_level").Int()),
+			Bookmarked:         value.Get("bookmarked").Bool(),
+			Liked:              value.Get("liked").Bool(),
+			Views:              int(value.Get("views").Int()),
+			LikeCount:          int(value.Get("like_count").Int()),
+			LastPosterUsername: value.Get("last_poster_username").Str,
+			CategoryID:         int(value.Get("category_id").Int()),
+		}
+
+		// Parse tags
+		tags := value.Get("tags")
+		tags.ForEach(func(_, tag gjson.Result) bool {
+			topic.Tags = append(topic.Tags, tag.Str)
+			return true
+		})
+
+		response.TopicList.Topics = append(response.TopicList.Topics, topic)
+		return true
+	})
 
 	// Fetch and map categories
 	categories, err := c.GetCategories()
@@ -260,7 +326,7 @@ func (c *Client) GetLatestTopics() (*Response, error) {
 		}
 	}
 
-	return &response, nil
+	return response, nil
 }
 
 func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
@@ -275,12 +341,35 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 		return nil, fmt.Errorf("API error: %s - %s", resp.Status, string(body))
 	}
 
-	var response TopicResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %v", err)
 	}
 
-	return &response, nil
+	result := gjson.ParseBytes(body)
+	response := &TopicResponse{}
+
+	// Parse posts
+	posts := result.Get("post_stream.posts")
+	posts.ForEach(func(_, value gjson.Result) bool {
+		post := Post{
+			ID:          int(value.Get("id").Int()),
+			Name:        value.Get("name").Str,
+			Username:    value.Get("username").Str,
+			CreatedAt:   value.Get("created_at").Time(),
+			Cooked:      value.Get("cooked").Str,
+			PostNumber:  int(value.Get("post_number").Int()),
+			ReplyCount:  int(value.Get("reply_count").Int()),
+			TopicID:     int(value.Get("topic_id").Int()),
+			TopicSlug:   value.Get("topic_slug").Str,
+			Reads:       int(value.Get("reads").Int()),
+			Score:       value.Get("score").Float(),
+		}
+		response.PostStream.Posts = append(response.PostStream.Posts, post)
+		return true
+	})
+
+	return response, nil
 }
 
 func (c *Client) GetCSRFToken() (string, error) {
@@ -305,19 +394,18 @@ func (c *Client) GetCSRFToken() (string, error) {
 		return "", fmt.Errorf("failed to get CSRF token: %s - %s", resp.Status, string(body))
 	}
 
-	var csrfResp struct {
-		CSRF string `json:"csrf"`
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %v", err)
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&csrfResp); err != nil {
-		return "", fmt.Errorf("failed to decode CSRF response: %v", err)
-	}
-
-	if csrfResp.CSRF == "" {
+	result := gjson.ParseBytes(body)
+	csrf := result.Get("csrf").Str
+	if csrf == "" {
 		return "", fmt.Errorf("empty CSRF token in response")
 	}
 
-	return csrfResp.CSRF, nil
+	return csrf, nil
 }
 
 func (c *Client) Login(username, password string) error {
@@ -409,12 +497,77 @@ func (c *Client) RefreshTopics() (*Response, error) {
 		}
 	}
 
-	var response Response
-	if err := json.Unmarshal(body, &response); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
-	}
+	result := gjson.ParseBytes(body)
+	response := &Response{}
 
-	return &response, nil
+	// Parse users
+	users := result.Get("users")
+	users.ForEach(func(_, value gjson.Result) bool {
+		user := User{
+			ID:             int(value.Get("id").Int()),
+			Username:       value.Get("username").Str,
+			Name:           value.Get("name").Str,
+			AvatarTemplate: value.Get("avatar_template").Str,
+			TrustLevel:     int(value.Get("trust_level").Int()),
+			Moderator:      value.Get("moderator").Bool(),
+		}
+		response.Users = append(response.Users, user)
+		return true
+	})
+
+	// Parse topic list
+	topicList := result.Get("topic_list")
+	response.TopicList.CanCreateTopic = topicList.Get("can_create_topic").Bool()
+	response.TopicList.MoreTopicsURL = topicList.Get("more_topics_url").Str
+	response.TopicList.PerPage = int(topicList.Get("per_page").Int())
+
+	// Parse topics
+	topics := topicList.Get("topics")
+	topics.ForEach(func(_, value gjson.Result) bool {
+		topic := Topic{
+			ID:                 int(value.Get("id").Int()),
+			Title:              value.Get("title").Str,
+			FancyTitle:         value.Get("fancy_title").Str,
+			Slug:               value.Get("slug").Str,
+			PostsCount:         int(value.Get("posts_count").Int()),
+			ReplyCount:         int(value.Get("reply_count").Int()),
+			HighestPostNumber:  int(value.Get("highest_post_number").Int()),
+			ImageURL:           value.Get("image_url").Str,
+			CreatedAt:          value.Get("created_at").Time(),
+			LastPostedAt:       value.Get("last_posted_at").Time(),
+			Bumped:             value.Get("bumped").Bool(),
+			BumpedAt:           value.Get("bumped_at").Time(),
+			Archetype:          value.Get("archetype").Str,
+			Unseen:             value.Get("unseen").Bool(),
+			LastReadPostNumber: int(value.Get("last_read_post_number").Int()),
+			Unread:             int(value.Get("unread").Int()),
+			NewPosts:           int(value.Get("new_posts").Int()),
+			UnreadPosts:        int(value.Get("unread_posts").Int()),
+			Pinned:             value.Get("pinned").Bool(),
+			Visible:            value.Get("visible").Bool(),
+			Closed:             value.Get("closed").Bool(),
+			Archived:           value.Get("archived").Bool(),
+			NotificationLevel:  int(value.Get("notification_level").Int()),
+			Bookmarked:         value.Get("bookmarked").Bool(),
+			Liked:              value.Get("liked").Bool(),
+			Views:              int(value.Get("views").Int()),
+			LikeCount:          int(value.Get("like_count").Int()),
+			LastPosterUsername: value.Get("last_poster_username").Str,
+			CategoryID:         int(value.Get("category_id").Int()),
+		}
+
+		// Parse tags
+		tags := value.Get("tags")
+		tags.ForEach(func(_, tag gjson.Result) bool {
+			topic.Tags = append(topic.Tags, tag.Str)
+			return true
+		})
+
+		response.TopicList.Topics = append(response.TopicList.Topics, topic)
+		return true
+	})
+
+	return response, nil
 }
 
 func (c *Client) GetCategories() (*CategoryResponse, error) {
@@ -427,10 +580,31 @@ func (c *Client) GetCategories() (*CategoryResponse, error) {
 	cachePath := filepath.Join(instanceDir, "categories.json")
 	
 	if data, err := os.ReadFile(cachePath); err == nil {
-		var response CategoryResponse
-		if err := json.Unmarshal(data, &response); err == nil {
-			return &response, nil
-		}
+		result := gjson.ParseBytes(data)
+		response := &CategoryResponse{}
+		
+		// Parse categories
+		categories := result.Get("category_list.categories")
+		categories.ForEach(func(_, value gjson.Result) bool {
+			category := Category{
+				ID:          int(value.Get("id").Int()),
+				Name:        value.Get("name").Str,
+				Color:       value.Get("color").Str,
+				TextColor:   value.Get("text_color").Str,
+				Slug:        value.Get("slug").Str,
+				TopicCount:  int(value.Get("topic_count").Int()),
+				PostCount:   int(value.Get("post_count").Int()),
+				Position:    int(value.Get("position").Int()),
+				Description: value.Get("description").Str,
+			}
+			response.CategoryList.Categories = append(response.CategoryList.Categories, category)
+			return true
+		})
+		
+		response.CategoryList.CanCreateCategory = result.Get("category_list.can_create_category").Bool()
+		response.CategoryList.CanCreateTopic = result.Get("category_list.can_create_topic").Bool()
+		
+		return response, nil
 	}
 
 	resp, err := c.client.Get(fmt.Sprintf("%s/categories.json", c.baseURL))
@@ -457,10 +631,29 @@ func (c *Client) GetCategories() (*CategoryResponse, error) {
 		}
 	}
 
-	var response CategoryResponse
-	if err := json.Unmarshal(body, &response); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %v", err)
-	}
+	result := gjson.ParseBytes(body)
+	response := &CategoryResponse{}
 
-	return &response, nil
+	// Parse categories
+	categories := result.Get("category_list.categories")
+	categories.ForEach(func(_, value gjson.Result) bool {
+		category := Category{
+			ID:          int(value.Get("id").Int()),
+			Name:        value.Get("name").Str,
+			Color:       value.Get("color").Str,
+			TextColor:   value.Get("text_color").Str,
+			Slug:        value.Get("slug").Str,
+			TopicCount:  int(value.Get("topic_count").Int()),
+			PostCount:   int(value.Get("post_count").Int()),
+			Position:    int(value.Get("position").Int()),
+			Description: value.Get("description").Str,
+		}
+		response.CategoryList.Categories = append(response.CategoryList.Categories, category)
+		return true
+	})
+
+	response.CategoryList.CanCreateCategory = result.Get("category_list.can_create_category").Bool()
+	response.CategoryList.CanCreateTopic = result.Get("category_list.can_create_topic").Bool()
+
+	return response, nil
 } 
