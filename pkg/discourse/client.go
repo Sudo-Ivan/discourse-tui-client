@@ -4,6 +4,8 @@
 package discourse
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -130,6 +132,21 @@ type CategoryList struct {
 
 type CategoryResponse struct {
 	CategoryList CategoryList `json:"category_list"`
+}
+
+type DraftPayload struct {
+	Reply       string      `json:"reply"`
+	Action      string      `json:"action"`
+	Title       string      `json:"title"`
+	CategoryID  int         `json:"categoryId"`
+	Tags        []string    `json:"tags,omitempty"`
+	ArchetypeID string      `json:"archetypeId"`
+	MetaData    interface{} `json:"metaData"`
+}
+
+type CreateTopicPayload struct {
+	Draft         string `json:"draft"`
+	DraftSequence int    `json:"draft_sequence"`
 }
 
 type Client struct {
@@ -339,7 +356,6 @@ func (c *Client) GetLatestTopics() (*Response, error) {
 }
 
 func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
-	// Step 1: Fetch initial topic data to get post IDs
 	initialResp, err := c.client.Get(fmt.Sprintf("%s/t/%d.json", c.baseURL, topicID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch initial topic data: %w", err)
@@ -359,8 +375,6 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 	initialResult := gjson.ParseBytes(initialBody)
 	postStreamIDsResult := initialResult.Get("post_stream.stream")
 	if !postStreamIDsResult.Exists() {
-		// If post_stream.stream doesn't exist, try to parse posts directly from post_stream.posts
-		// This handles cases where a topic might be very short or structured differently.
 		response := &TopicResponse{}
 		postsData := initialResult.Get("post_stream.posts")
 		postsData.ForEach(func(_, value gjson.Result) bool {
@@ -401,9 +415,8 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 	}
 
 	if len(postIDs) == 0 {
-		// If there are no post IDs in the stream, parse posts from initialResult.post_stream.posts if they exist
 		response := &TopicResponse{}
-		postsData := initialResult.Get("post_stream.posts") // This is the part for very short topics
+		postsData := initialResult.Get("post_stream.posts")
 		postsData.ForEach(func(_, value gjson.Result) bool {
 			post := Post{
 				ID:          int(value.Get("id").Int()),
@@ -418,7 +431,6 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 				Reads:       int(value.Get("reads").Int()),
 				Score:       value.Get("score").Float(),
 			}
-			// Parse ActionsSummary
 			actionsSummaryResult := value.Get("actions_summary")
 			actionsSummaryResult.ForEach(func(_, actionData gjson.Result) bool {
 				action := ActionsSummary{
@@ -436,7 +448,6 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 		return response, nil
 	}
 
-	// Step 2: Construct URL with all post_ids
 	postsURL := fmt.Sprintf("%s/t/%d/posts.json", c.baseURL, topicID)
 	req, err := http.NewRequest("GET", postsURL, nil)
 	if err != nil {
@@ -447,11 +458,9 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 	for _, postID := range postIDs {
 		q.Add("post_ids[]", fmt.Sprintf("%d", postID))
 	}
-	// As seen in the user's cURL:
 	q.Add("include_suggested", "false")
 	req.URL.RawQuery = q.Encode()
 
-	// Step 3: Fetch all posts
 	allPostsResp, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch all topic posts: %w", err)
@@ -468,11 +477,10 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 		return nil, fmt.Errorf("failed to read all posts response body: %w", err)
 	}
 
-	// Step 4: Parse posts from the response
 	result := gjson.ParseBytes(allPostsBody)
 	response := &TopicResponse{}
 
-	posts := result.Get("post_stream.posts") // Assuming the structure is the same
+	posts := result.Get("post_stream.posts")
 	posts.ForEach(func(_, value gjson.Result) bool {
 		post := Post{
 			ID:          int(value.Get("id").Int()),
@@ -487,7 +495,6 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 			Reads:       int(value.Get("reads").Int()),
 			Score:       value.Get("score").Float(),
 		}
-		// Parse ActionsSummary
 		actionsSummaryResult := value.Get("actions_summary")
 		actionsSummaryResult.ForEach(func(_, actionData gjson.Result) bool {
 			action := ActionsSummary{
@@ -634,7 +641,6 @@ func (c *Client) RefreshTopics() (*Response, error) {
 	result := gjson.ParseBytes(body)
 	response := &Response{}
 
-	// Parse users
 	users := result.Get("users")
 	users.ForEach(func(_, value gjson.Result) bool {
 		user := User{
@@ -690,7 +696,6 @@ func (c *Client) RefreshTopics() (*Response, error) {
 			CategoryID:         int(value.Get("category_id").Int()),
 		}
 
-		// Parse tags
 		tags := value.Get("tags")
 		tags.ForEach(func(_, tag gjson.Result) bool {
 			topic.Tags = append(topic.Tags, tag.Str)
@@ -811,7 +816,7 @@ func (c *Client) PerformPostAction(postID int, postActionTypeID int, flagTopic b
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
 	req.Header.Set("X-CSRF-Token", csrfToken)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-	req.Header.Set("Accept", "application/json, text/javascript, */*; q=0.01") // Added based on typical Discourse requests
+	req.Header.Set("Accept", "application/json, text/javascript, */*; q=0.01")
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -857,4 +862,74 @@ func (c *Client) PerformPostAction(postID int, postActionTypeID int, flagTopic b
 	})
 
 	return &post, nil
+}
+
+func (c *Client) CreateTopic(title, rawContent string, categoryID int, tags []string) (*Post, error) {
+	csrfToken, err := c.GetCSRFToken()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get CSRF token for creating topic: %w", err)
+	}
+
+	draftContent := DraftPayload{
+		Reply:       rawContent,
+		Action:      "createTopic",
+		Title:       title,
+		CategoryID:  categoryID,
+		Tags:        tags,
+		ArchetypeID: "regular",
+		MetaData:    nil,
+	}
+
+	draftJSONBytes, err := json.Marshal(draftContent)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal draft content: %w", err)
+	}
+
+	payload := CreateTopicPayload{
+		Draft:         string(draftJSONBytes),
+		DraftSequence: 1,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal create topic payload: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/posts.json", c.baseURL), bytes.NewReader(payloadBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new topic request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-CSRF-Token", csrfToken)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute create topic request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read create topic response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("create topic API error: %s (status code: %d) - %s", resp.Status, resp.StatusCode, string(body))
+	}
+
+	var createdPost Post
+	if err := json.Unmarshal(body, &createdPost); err != nil {
+		log.Printf("Error unmarshalling created topic/post response body: %v. Body: %s", err, string(body))
+		return nil, fmt.Errorf("failed to parse create topic response (body: %s): %w", string(body), err)
+	}
+
+	if createdPost.ID == 0 {
+		log.Printf("Created post has ID 0. Body: %s", string(body))
+		return nil, fmt.Errorf("created post has ID 0, which is invalid (body: %s)", string(body))
+	}
+
+	return &createdPost, nil
 } 
