@@ -323,4 +323,44 @@ func (c *Client) SaveCookies(cookieFile string) error {
 	}
 
 	return os.WriteFile(cookieFile, []byte(strings.Join(cookieStrings, "\n")), 0600) //nosec G306
+}
+
+func (c *Client) RefreshTopics() (*Response, error) {
+	resp, err := c.client.Get(fmt.Sprintf("%s/latest.json", c.baseURL))
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch latest topics: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error: %s - %s", resp.Status, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	userCacheDir, err := os.UserCacheDir()
+	if err != nil {
+		log.Printf("Warning: failed to get cache directory: %v", err)
+	} else {
+		instanceDir := filepath.Join(userCacheDir, "discourse-tui-client", "instances", strings.TrimPrefix(strings.TrimPrefix(c.baseURL, "https://"), "http://"))
+		if err := os.MkdirAll(instanceDir, 0750); err != nil {
+			log.Printf("Warning: failed to create instance cache directory: %v", err)
+		} else {
+			cachePath := filepath.Join(instanceDir, "latest.json")
+			if err := os.WriteFile(cachePath, body, 0600); err != nil { //nosec G306
+				log.Printf("Warning: failed to save JSON to file: %v", err)
+			}
+		}
+	}
+
+	var response Response
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %v", err)
+	}
+
+	return &response, nil
 } 

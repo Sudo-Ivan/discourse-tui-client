@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"log"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -36,6 +37,7 @@ type Model struct {
 	Fullscreen bool
 	Search     textinput.Model
 	Searching  bool
+	LastRefresh time.Time
 }
 
 func InitialModel(client *discourse.Client, topics []discourse.Topic) Model {
@@ -75,18 +77,41 @@ func InitialModel(client *discourse.Client, topics []discourse.Topic) Model {
 		Client:    client,
 		Topics:    topics,
 		Search:    search,
+		LastRefresh: time.Now(),
 	}
 }
 
 func (m Model) Init() tea.Cmd {
 	log.Printf("Initializing model with %d topics", len(m.Topics))
-	return nil
+	return tea.Tick(5*time.Minute, func(t time.Time) tea.Msg {
+		return refreshMsg{}
+	})
 }
+
+type refreshMsg struct{}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case refreshMsg:
+		response, err := m.Client.RefreshTopics()
+		if err != nil {
+			log.Printf("Failed to refresh topics: %v", err)
+			return m, tea.Tick(5*time.Minute, func(t time.Time) tea.Msg {
+				return refreshMsg{}
+			})
+		}
+		items := make([]list.Item, len(response.TopicList.Topics))
+		for i, topic := range response.TopicList.Topics {
+			items[i] = topicItem{topic: topic}
+		}
+		m.List.SetItems(items)
+		m.Topics = response.TopicList.Topics
+		m.LastRefresh = time.Now()
+		return m, tea.Tick(5*time.Minute, func(t time.Time) tea.Msg {
+			return refreshMsg{}
+		})
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -103,6 +128,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.Searching {
 				return m, m.Search.Focus()
 			}
+			return m, nil
+		case "R":
+			response, err := m.Client.RefreshTopics()
+			if err != nil {
+				log.Printf("Failed to refresh topics: %v", err)
+				return m, nil
+			}
+			items := make([]list.Item, len(response.TopicList.Topics))
+			for i, topic := range response.TopicList.Topics {
+				items[i] = topicItem{topic: topic}
+			}
+			m.List.SetItems(items)
+			m.Topics = response.TopicList.Topics
+			m.LastRefresh = time.Now()
 			return m, nil
 		case "esc":
 			if m.Searching {
@@ -218,7 +257,7 @@ func (m Model) View() string {
 		)
 	}
 
-	help := "\nPress 'f' for fullscreen, '/' to search, 'esc' to exit fullscreen/search"
+	help := fmt.Sprintf("\nPress 'f' for fullscreen, '/' to search, 'R' to refresh, 'esc' to exit fullscreen/search\nLast refresh: %s", m.LastRefresh.Format("15:04:05"))
 	return view + help
 }
 
