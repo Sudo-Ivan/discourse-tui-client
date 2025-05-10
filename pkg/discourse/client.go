@@ -133,19 +133,12 @@ type CategoryResponse struct {
 	CategoryList CategoryList `json:"category_list"`
 }
 
-type DraftPayload struct {
-	Reply       string      `json:"reply"`
-	Action      string      `json:"action"`
-	Title       string      `json:"title"`
-	CategoryID  int         `json:"categoryId"`
-	Tags        []string    `json:"tags,omitempty"`
-	ArchetypeID string      `json:"archetypeId"`
-	MetaData    interface{} `json:"metaData"`
-}
-
-type CreateTopicPayload struct {
-	Draft         string `json:"draft"`
-	DraftSequence int    `json:"draft_sequence"`
+type apiCreateTopicPayload struct {
+	Title     string   `json:"title"`
+	Raw       string   `json:"raw"`
+	Category  int      `json:"category"`
+	Tags      []string `json:"tags,omitempty"`
+	Archetype string   `json:"archetype"`
 }
 
 type Client struct {
@@ -867,24 +860,12 @@ func (c *Client) CreateTopic(title, rawContent string, categoryID int, tags []st
 		return nil, fmt.Errorf("failed to get CSRF token for creating topic: %w", err)
 	}
 
-	draftContent := DraftPayload{
-		Reply:       rawContent,
-		Action:      "createTopic",
-		Title:       title,
-		CategoryID:  categoryID,
-		Tags:        tags,
-		ArchetypeID: "regular",
-		MetaData:    nil,
-	}
-
-	draftJSONBytes, err := json.Marshal(draftContent)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal draft content: %w", err)
-	}
-
-	payload := CreateTopicPayload{
-		Draft:         string(draftJSONBytes),
-		DraftSequence: 1,
+	payload := apiCreateTopicPayload{
+		Title:     title,
+		Raw:       rawContent,
+		Category:  categoryID,
+		Tags:      tags,
+		Archetype: "regular",
 	}
 
 	payloadBytes, err := json.Marshal(payload)

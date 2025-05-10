@@ -373,6 +373,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.NewTopicForm.err = msg.err
 			m.NewTopicForm.submitting = false
 			m.NewTopicForm.message = ""
+			log.Printf("Error creating topic: %v", msg.err)
 			return m, nil
 		}
 		newForm, newCmd := m.NewTopicForm.Update(msg)
