@@ -1,6 +1,6 @@
 # Discourse TUI Client
 
-A simple and fast discourse tui client that doesn't require an API.
+A simple and fast discourse tui client that doesn't require the user API.
 
 ## Install
 
@@ -30,6 +30,7 @@ go install github.com/Sudo-Ivan/discourse-tui-client@latest
 - [ ] Performance and Memory usage improvements
 - [ ] Navigate categories and tags
 - [ ] DM support
+- [ ] Fix codeblocks and ASCII art rendering
 
 ## Usage
 
