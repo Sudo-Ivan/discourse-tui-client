@@ -582,14 +582,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.isLoadingPosts = true
 					m.Viewport.SetContent("Loading posts...")
 					selectedTopicID := i.topic.ID
-					cmd = func() tea.Msg {
-						posts, err := m.Client.GetTopicPosts(selectedTopicID)
+					// First load only the first page to show content quickly.
+					cmd1 := func() tea.Msg {
+						postsPage, err := m.Client.GetTopicPostsPage(selectedTopicID, 1)
 						if err != nil {
 							return postsLoadErrorMsg{err: err}
 						}
-						return postsLoadedMsg{posts: posts}
+						return postsLoadedMsg{posts: postsPage}
 					}
-					cmds = append(cmds, cmd)
+					// Then load the full topic in background.
+					cmd2 := func() tea.Msg {
+						fullPosts, err := m.Client.GetTopicPosts(selectedTopicID)
+						if err != nil {
+							return postsLoadErrorMsg{err: err}
+						}
+						return postsLoadedMsg{posts: fullPosts}
+					}
+					cmds = append(cmds, cmd1, cmd2)
 				}
 			}
 		case postsLoadedMsg:

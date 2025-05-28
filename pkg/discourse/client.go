@@ -145,6 +145,7 @@ type Client struct {
 	client      *http.Client
 	baseURL     string
 	cookiesPath string
+	pageCooldown time.Duration
 }
 
 func (c *Client) CookiesPath() string {
@@ -180,6 +181,7 @@ func NewClient(baseURL string, cookiesPath string) (*Client, error) {
 		client:      client,
 		baseURL:     baseURL,
 		cookiesPath: cookiesPath,
+		pageCooldown: 500 * time.Millisecond,
 	}, nil
 }
 
@@ -347,68 +349,35 @@ func (c *Client) GetLatestTopics() (*Response, error) {
 }
 
 func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
-	initialResp, err := c.client.Get(fmt.Sprintf("%s/t/%d.json", c.baseURL, topicID))
+	// Fetch initial data to collect all post IDs
+	resp, err := c.client.Get(fmt.Sprintf("%s/t/%d.json", c.baseURL, topicID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch initial topic data: %w", err)
 	}
-	defer initialResp.Body.Close()
-
-	if initialResp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(initialResp.Body)
-		return nil, fmt.Errorf("API error fetching initial topic data: %s - %s", initialResp.Status, string(body))
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error fetching initial topic data: %s - %s", resp.Status, string(body))
 	}
-
-	initialBody, err := io.ReadAll(initialResp.Body)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read initial topic response body: %w", err)
 	}
+	initial := gjson.ParseBytes(data)
 
-	initialResult := gjson.ParseBytes(initialBody)
-	postStreamIDsResult := initialResult.Get("post_stream.stream")
-	if !postStreamIDsResult.Exists() {
-		response := &TopicResponse{}
-		postsData := initialResult.Get("post_stream.posts")
-		postsData.ForEach(func(_, value gjson.Result) bool {
-			post := Post{
-				ID:         int(value.Get("id").Int()),
-				Name:       value.Get("name").Str,
-				Username:   value.Get("username").Str,
-				CreatedAt:  value.Get("created_at").Time(),
-				Cooked:     value.Get("cooked").Str,
-				PostNumber: int(value.Get("post_number").Int()),
-				ReplyCount: int(value.Get("reply_count").Int()),
-				TopicID:    int(value.Get("topic_id").Int()),
-				TopicSlug:  value.Get("topic_slug").Str,
-				Reads:      int(value.Get("reads").Int()),
-				Score:      value.Get("score").Float(),
-			}
-			// Parse ActionsSummary
-			actionsSummaryResult := value.Get("actions_summary")
-			actionsSummaryResult.ForEach(func(_, actionData gjson.Result) bool {
-				action := ActionsSummary{
-					ID:      int(actionData.Get("id").Int()),
-					Count:   int(actionData.Get("count").Int()),
-					Acted:   actionData.Get("acted").Bool(),
-					CanUndo: actionData.Get("can_undo").Bool(),
-				}
-				post.ActionsSummary = append(post.ActionsSummary, action)
-				return true
-			})
-			response.PostStream.Posts = append(response.PostStream.Posts, post)
-			return true
-		})
-		return response, nil
-	}
-
+	// Collect post IDs
+	idsResult := initial.Get("post_stream.stream")
 	var postIDs []int
-	for _, idEntry := range postStreamIDsResult.Array() {
-		postIDs = append(postIDs, int(idEntry.Int()))
-	}
+	idsResult.ForEach(func(_, idVal gjson.Result) bool {
+		postIDs = append(postIDs, int(idVal.Int()))
+		return true
+	})
 
+	// If no IDs, parse posts directly and return
 	if len(postIDs) == 0 {
 		response := &TopicResponse{}
-		postsData := initialResult.Get("post_stream.posts")
-		postsData.ForEach(func(_, value gjson.Result) bool {
+		posts := initial.Get("post_stream.posts")
+		posts.ForEach(func(_, value gjson.Result) bool {
 			post := Post{
 				ID:         int(value.Get("id").Int()),
 				Name:       value.Get("name").Str,
@@ -422,13 +391,13 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 				Reads:      int(value.Get("reads").Int()),
 				Score:      value.Get("score").Float(),
 			}
-			actionsSummaryResult := value.Get("actions_summary")
-			actionsSummaryResult.ForEach(func(_, actionData gjson.Result) bool {
+			actions := value.Get("actions_summary")
+			actions.ForEach(func(_, a gjson.Result) bool {
 				action := ActionsSummary{
-					ID:      int(actionData.Get("id").Int()),
-					Count:   int(actionData.Get("count").Int()),
-					Acted:   actionData.Get("acted").Bool(),
-					CanUndo: actionData.Get("can_undo").Bool(),
+					ID:      int(a.Get("id").Int()),
+					Count:   int(a.Get("count").Int()),
+					Acted:   a.Get("acted").Bool(),
+					CanUndo: a.Get("can_undo").Bool(),
 				}
 				post.ActionsSummary = append(post.ActionsSummary, action)
 				return true
@@ -439,38 +408,89 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 		return response, nil
 	}
 
-	postsURL := fmt.Sprintf("%s/t/%d/posts.json", c.baseURL, topicID)
-	req, err := http.NewRequest("GET", postsURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request for all posts: %w", err)
-	}
+	// Throttle before fetching all posts
+	time.Sleep(c.pageCooldown)
 
+	// Fetch all posts by ID
+	allURL := fmt.Sprintf("%s/t/%d/posts.json", c.baseURL, topicID)
+	req, err := http.NewRequest("GET", allURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create full posts request: %w", err)
+	}
 	q := req.URL.Query()
-	for _, postID := range postIDs {
-		q.Add("post_ids[]", fmt.Sprintf("%d", postID))
+	for _, id := range postIDs {
+		q.Add("post_ids[]", fmt.Sprintf("%d", id))
 	}
 	q.Add("include_suggested", "false")
 	req.URL.RawQuery = q.Encode()
 
-	allPostsResp, err := c.client.Do(req)
+	fullResp, err := c.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch all topic posts: %w", err)
+		return nil, fmt.Errorf("failed to fetch full posts: %w", err)
 	}
-	defer allPostsResp.Body.Close()
-
-	if allPostsResp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(allPostsResp.Body)
-		return nil, fmt.Errorf("API error fetching all posts: %s - %s", allPostsResp.Status, string(body))
+	defer fullResp.Body.Close()
+	if fullResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(fullResp.Body)
+		return nil, fmt.Errorf("API error fetching full posts: %s - %s", fullResp.Status, string(body))
 	}
-
-	allPostsBody, err := io.ReadAll(allPostsResp.Body)
+	fullData, err := io.ReadAll(fullResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read all posts response body: %w", err)
+		return nil, fmt.Errorf("failed to read full posts response: %w", err)
 	}
-
-	result := gjson.ParseBytes(allPostsBody)
+	result := gjson.ParseBytes(fullData)
 	response := &TopicResponse{}
+	postsArray := result.Get("post_stream.posts")
+	postsArray.ForEach(func(_, value gjson.Result) bool {
+		post := Post{
+			ID:         int(value.Get("id").Int()),
+			Name:       value.Get("name").Str,
+			Username:   value.Get("username").Str,
+			CreatedAt:  value.Get("created_at").Time(),
+			Cooked:     value.Get("cooked").Str,
+			PostNumber: int(value.Get("post_number").Int()),
+			ReplyCount: int(value.Get("reply_count").Int()),
+			TopicID:    int(value.Get("topic_id").Int()),
+			TopicSlug:  value.Get("topic_slug").Str,
+			Reads:      int(value.Get("reads").Int()),
+			Score:      value.Get("score").Float(),
+		}
+		actions := value.Get("actions_summary")
+		actions.ForEach(func(_, a gjson.Result) bool {
+			action := ActionsSummary{
+				ID:      int(a.Get("id").Int()),
+				Count:   int(a.Get("count").Int()),
+				Acted:   a.Get("acted").Bool(),
+				CanUndo: a.Get("can_undo").Bool(),
+			}
+			post.ActionsSummary = append(post.ActionsSummary, action)
+			return true
+		})
+		response.PostStream.Posts = append(response.PostStream.Posts, post)
+		return true
+	})
+	return response, nil
+}
 
+func (c *Client) GetTopicPostsPage(topicID, page int) (*TopicResponse, error) {
+	if page != 1 {
+		// Only initial page supported; fall back to full fetch
+		return c.GetTopicPosts(topicID)
+	}
+	resp, err := c.client.Get(fmt.Sprintf("%s/t/%d.json", c.baseURL, topicID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch initial topic page: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error fetching initial topic page: %s - %s", resp.Status, string(body))
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read initial topic page: %w", err)
+	}
+	result := gjson.ParseBytes(data)
+	response := &TopicResponse{}
 	posts := result.Get("post_stream.posts")
 	posts.ForEach(func(_, value gjson.Result) bool {
 		post := Post{
@@ -486,13 +506,13 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 			Reads:      int(value.Get("reads").Int()),
 			Score:      value.Get("score").Float(),
 		}
-		actionsSummaryResult := value.Get("actions_summary")
-		actionsSummaryResult.ForEach(func(_, actionData gjson.Result) bool {
+		actions := value.Get("actions_summary")
+		actions.ForEach(func(_, a gjson.Result) bool {
 			action := ActionsSummary{
-				ID:      int(actionData.Get("id").Int()),
-				Count:   int(actionData.Get("count").Int()),
-				Acted:   actionData.Get("acted").Bool(),
-				CanUndo: actionData.Get("can_undo").Bool(),
+				ID:      int(a.Get("id").Int()),
+				Count:   int(a.Get("count").Int()),
+				Acted:   a.Get("acted").Bool(),
+				CanUndo: a.Get("can_undo").Bool(),
 			}
 			post.ActionsSummary = append(post.ActionsSummary, action)
 			return true
@@ -500,7 +520,6 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 		response.PostStream.Posts = append(response.PostStream.Posts, post)
 		return true
 	})
-
 	return response, nil
 }
 
@@ -910,4 +929,8 @@ func (c *Client) CreateTopic(title, rawContent string, categoryID int, tags []st
 	}
 
 	return &createdPost, nil
+}
+
+func (c *Client) SetPageCooldown(d time.Duration) {
+	c.pageCooldown = d
 }

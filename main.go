@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -55,6 +56,7 @@ func main() {
 	flag.BoolVar(resetCache, "r", false, "Reset cache and force fresh fetch (shorthand).")
 	outputPath := flag.String("output", "", "Output posts to file (txt, json, or html)")
 	flag.StringVar(outputPath, "o", "", "Output posts to file (shorthand)")
+	cooldown := flag.Duration("cooldown", 500*time.Millisecond, "Cooldown between page fetches (e.g. 500ms)")
 	flag.Parse()
 
 	if *outputPath != "" {
@@ -164,6 +166,7 @@ func main() {
 			fmt.Printf("Failed to create client: %v\n", err)
 			os.Exit(1)
 		}
+		client.SetPageCooldown(*cooldown)
 	} else {
 		savedInstance, err := config.LoadInstance()
 		if err != nil {
@@ -174,6 +177,7 @@ func main() {
 			if err != nil {
 				log.Printf("Failed to create client with saved instance: %v", err)
 			}
+			client.SetPageCooldown(*cooldown)
 		}
 		if client == nil {
 			client, err = discourse.NewClient("https://placeholder.com", defaultCookiesPath)
@@ -182,6 +186,7 @@ func main() {
 				fmt.Printf("Failed to create temporary client: %v\n", err)
 				os.Exit(1)
 			}
+			client.SetPageCooldown(*cooldown)
 		}
 	}
 
@@ -207,6 +212,7 @@ func main() {
 			fmt.Printf("Failed to create client with new URL: %v\n", err)
 			os.Exit(1)
 		}
+		client.SetPageCooldown(*cooldown)
 		instanceName = strings.TrimPrefix(strings.TrimPrefix(loginModel.GetInstanceURL(), "https://"), "http://")
 		latestTopicsCachePath = filepath.Join(appCacheDir, "instances", instanceName, "latest.json")
 		log.Printf("Updated latest topics cache path: %s", latestTopicsCachePath)
