@@ -934,3 +934,174 @@ func (c *Client) CreateTopic(title, rawContent string, categoryID int, tags []st
 func (c *Client) SetPageCooldown(d time.Duration) {
 	c.pageCooldown = d
 }
+
+func (c *Client) GetMoreTopics(moreURL string) (*Response, error) {
+	if moreURL == "" {
+		return nil, fmt.Errorf("no more topics URL provided")
+	}
+	
+	var fullURL string
+	if strings.HasPrefix(moreURL, "http") {
+		fullURL = moreURL
+	} else {
+		fullURL = c.baseURL + moreURL
+	}
+	
+	resp, err := c.client.Get(fullURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch more topics: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error: %s - %s", resp.Status, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	result := gjson.ParseBytes(body)
+	response := &Response{}
+
+	users := result.Get("users")
+	users.ForEach(func(_, value gjson.Result) bool {
+		user := User{
+			ID:             int(value.Get("id").Int()),
+			Username:       value.Get("username").Str,
+			Name:           value.Get("name").Str,
+			AvatarTemplate: value.Get("avatar_template").Str,
+			TrustLevel:     int(value.Get("trust_level").Int()),
+			Moderator:      value.Get("moderator").Bool(),
+		}
+		response.Users = append(response.Users, user)
+		return true
+	})
+
+	topicList := result.Get("topic_list")
+	response.TopicList.CanCreateTopic = topicList.Get("can_create_topic").Bool()
+	response.TopicList.MoreTopicsURL = topicList.Get("more_topics_url").Str
+	response.TopicList.PerPage = int(topicList.Get("per_page").Int())
+
+	topics := topicList.Get("topics")
+	topics.ForEach(func(_, value gjson.Result) bool {
+		topic := Topic{
+			ID:                 int(value.Get("id").Int()),
+			Title:              value.Get("title").Str,
+			FancyTitle:         value.Get("fancy_title").Str,
+			Slug:               value.Get("slug").Str,
+			PostsCount:         int(value.Get("posts_count").Int()),
+			ReplyCount:         int(value.Get("reply_count").Int()),
+			HighestPostNumber:  int(value.Get("highest_post_number").Int()),
+			ImageURL:           value.Get("image_url").Str,
+			CreatedAt:          value.Get("created_at").Time(),
+			LastPostedAt:       value.Get("last_posted_at").Time(),
+			Bumped:             value.Get("bumped").Bool(),
+			BumpedAt:           value.Get("bumped_at").Time(),
+			Archetype:          value.Get("archetype").Str,
+			Unseen:             value.Get("unseen").Bool(),
+			LastReadPostNumber: int(value.Get("last_read_post_number").Int()),
+			Unread:             int(value.Get("unread").Int()),
+			NewPosts:           int(value.Get("new_posts").Int()),
+			UnreadPosts:        int(value.Get("unread_posts").Int()),
+			Pinned:             value.Get("pinned").Bool(),
+			Visible:            value.Get("visible").Bool(),
+			Closed:             value.Get("closed").Bool(),
+			Archived:           value.Get("archived").Bool(),
+			NotificationLevel:  int(value.Get("notification_level").Int()),
+			Bookmarked:         value.Get("bookmarked").Bool(),
+			Liked:              value.Get("liked").Bool(),
+			Views:              int(value.Get("views").Int()),
+			LikeCount:          int(value.Get("like_count").Int()),
+			LastPosterUsername: value.Get("last_poster_username").Str,
+			CategoryID:         int(value.Get("category_id").Int()),
+		}
+
+		tags := value.Get("tags")
+		tags.ForEach(func(_, tag gjson.Result) bool {
+			topic.Tags = append(topic.Tags, tag.Str)
+			return true
+		})
+
+		response.TopicList.Topics = append(response.TopicList.Topics, topic)
+		return true
+	})
+
+	categories, err := c.GetCategories()
+	if err != nil {
+		log.Printf("Warning: failed to fetch categories: %v", err)
+	} else {
+		categoryMap := make(map[int]struct {
+			Name  string
+			Color string
+		})
+		for _, category := range categories.CategoryList.Categories {
+			categoryMap[category.ID] = struct {
+				Name  string
+				Color string
+			}{
+				Name:  category.Name,
+				Color: category.Color,
+			}
+		}
+
+		for i := range response.TopicList.Topics {
+			if cat, ok := categoryMap[response.TopicList.Topics[i].CategoryID]; ok {
+				response.TopicList.Topics[i].CategoryName = cat.Name
+				response.TopicList.Topics[i].CategoryColor = cat.Color
+			}
+		}
+	}
+
+	return response, nil
+}
+
+func (c *Client) LoadAllTopics(maxPages int) (*Response, error) {
+	if maxPages <= 0 {
+		maxPages = 10
+	}
+
+	initialResp, err := c.GetLatestTopics()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get initial topics: %v", err)
+	}
+
+	allTopics := initialResp.TopicList.Topics
+	allUsers := initialResp.Users
+	currentMoreURL := initialResp.TopicList.MoreTopicsURL
+
+	for page := 1; page < maxPages && currentMoreURL != ""; page++ {
+		time.Sleep(c.pageCooldown)
+		
+		moreResp, err := c.GetMoreTopics(currentMoreURL)
+		if err != nil {
+			log.Printf("Warning: failed to fetch page %d: %v", page+1, err)
+			break
+		}
+
+		allTopics = append(allTopics, moreResp.TopicList.Topics...)
+		allUsers = append(allUsers, moreResp.Users...)
+		currentMoreURL = moreResp.TopicList.MoreTopicsURL
+		
+		if len(moreResp.TopicList.Topics) == 0 {
+			break
+		}
+	}
+
+	result := &Response{
+		Users:         allUsers,
+		PrimaryGroups: initialResp.PrimaryGroups,
+		FlairGroups:   initialResp.FlairGroups,
+		TopicList: TopicList{
+			CanCreateTopic: initialResp.TopicList.CanCreateTopic,
+			MoreTopicsURL:  currentMoreURL,
+			PerPage:        initialResp.TopicList.PerPage,
+			TopTags:        initialResp.TopicList.TopTags,
+			Topics:         allTopics,
+		},
+	}
+
+	return result, nil
+}

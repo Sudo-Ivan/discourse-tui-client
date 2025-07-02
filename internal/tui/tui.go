@@ -75,6 +75,16 @@ type topicsRefreshedMsg struct {
 }
 type topicsRefreshErrorMsg struct{ err error }
 
+type moreTopicsLoadedMsg struct {
+	response *discourse.Response
+}
+type moreTopicsLoadErrorMsg struct{ err error }
+
+type loadAllTopicsMsg struct {
+	response *discourse.Response
+}
+type loadAllTopicsErrorMsg struct{ err error }
+
 type newTopicModel struct {
 	client        *discourse.Client
 	titleInput    textinput.Model
@@ -289,6 +299,9 @@ type Model struct {
 	StatusMessage      string
 	isLoadingPosts     bool
 	isRefreshingTopics bool
+	MoreTopicsURL      string
+	isLoadingMore      bool
+	isLoadingAll       bool
 }
 
 func InitialModel(client *discourse.Client, topics []discourse.Topic) Model {
@@ -324,7 +337,7 @@ func InitialModel(client *discourse.Client, topics []discourse.Topic) Model {
 
 	instanceURL := strings.TrimPrefix(strings.TrimPrefix(client.BaseURL(), "https://"), "http://")
 
-	m := Model{
+	return Model{
 		List:        l,
 		Viewport:    vp,
 		Client:      client,
@@ -334,7 +347,6 @@ func InitialModel(client *discourse.Client, topics []discourse.Topic) Model {
 		InstanceURL: instanceURL,
 		State:       stateTopicList,
 	}
-	return m
 }
 
 func (m Model) Init() tea.Cmd {
@@ -430,6 +442,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.List.SetItems(items)
 			m.Topics = msg.response.TopicList.Topics
+			m.MoreTopicsURL = msg.response.TopicList.MoreTopicsURL
 			m.LastRefresh = time.Now()
 			cmds = append(cmds, tea.Tick(5*time.Minute, func(t time.Time) tea.Msg {
 				return refreshMsg{}
@@ -442,6 +455,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, tea.Tick(5*time.Minute, func(t time.Time) tea.Msg {
 				return refreshMsg{}
 			}))
+			return m, tea.Batch(cmds...)
+		case moreTopicsLoadedMsg:
+			m.isLoadingMore = false
+			m.StatusMessage = fmt.Sprintf("Loaded %d more topics!", len(msg.response.TopicList.Topics))
+			
+			// Append new topics to existing ones
+			m.Topics = append(m.Topics, msg.response.TopicList.Topics...)
+			m.MoreTopicsURL = msg.response.TopicList.MoreTopicsURL
+			
+			// Update list items
+			items := make([]list.Item, len(m.Topics))
+			for i, topic := range m.Topics {
+				items[i] = topicItem{topic: topic}
+			}
+			m.List.SetItems(items)
+			return m, tea.Batch(cmds...)
+		case moreTopicsLoadErrorMsg:
+			m.isLoadingMore = false
+			m.StatusMessage = fmt.Sprintf("Error loading more topics: %v", msg.err)
+			log.Printf("Failed to load more topics: %v", msg.err)
+			return m, tea.Batch(cmds...)
+		case loadAllTopicsMsg:
+			m.isLoadingAll = false
+			m.StatusMessage = fmt.Sprintf("Loaded all %d topics!", len(msg.response.TopicList.Topics))
+			
+			// Replace with all topics
+			m.Topics = msg.response.TopicList.Topics
+			m.MoreTopicsURL = msg.response.TopicList.MoreTopicsURL
+			
+			// Update list items
+			items := make([]list.Item, len(m.Topics))
+			for i, topic := range m.Topics {
+				items[i] = topicItem{topic: topic}
+			}
+			m.List.SetItems(items)
+			return m, tea.Batch(cmds...)
+		case loadAllTopicsErrorMsg:
+			m.isLoadingAll = false
+			m.StatusMessage = fmt.Sprintf("Error loading all topics: %v", msg.err)
+			log.Printf("Failed to load all topics: %v", msg.err)
 			return m, tea.Batch(cmds...)
 
 		case tea.KeyMsg:
@@ -545,6 +598,58 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 					return topicsRefreshedMsg{response: response}
+				})
+				return m, tea.Batch(cmds...)
+			case "m":
+				if m.isLoadingMore || m.MoreTopicsURL == "" {
+					return m, nil
+				}
+				m.isLoadingMore = true
+				m.StatusMessage = "Loading more topics..."
+				cmds = append(cmds, func() tea.Msg {
+					response, err := m.Client.GetMoreTopics(m.MoreTopicsURL)
+					if err != nil {
+						return moreTopicsLoadErrorMsg{err: err}
+					}
+					categories, catErr := m.Client.GetCategories()
+					if catErr != nil {
+						log.Printf("Warning: failed to fetch categories for more topics: %v", catErr)
+					} else {
+						categoryMap := make(map[int]struct {
+							Name  string
+							Color string
+						})
+						for _, category := range categories.CategoryList.Categories {
+							categoryMap[category.ID] = struct {
+								Name  string
+								Color string
+							}{
+								Name:  category.Name,
+								Color: category.Color,
+							}
+						}
+						for i := range response.TopicList.Topics {
+							if cat, ok := categoryMap[response.TopicList.Topics[i].CategoryID]; ok {
+								response.TopicList.Topics[i].CategoryName = cat.Name
+								response.TopicList.Topics[i].CategoryColor = cat.Color
+							}
+						}
+					}
+					return moreTopicsLoadedMsg{response: response}
+				})
+				return m, tea.Batch(cmds...)
+			case "M":
+				if m.isLoadingAll {
+					return m, nil
+				}
+				m.isLoadingAll = true
+				m.StatusMessage = "Loading all topics (this may take a while)..."
+				cmds = append(cmds, func() tea.Msg {
+					response, err := m.Client.LoadAllTopics(20)
+					if err != nil {
+						return loadAllTopicsErrorMsg{err: err}
+					}
+					return loadAllTopicsMsg{response: response}
 				})
 				return m, tea.Batch(cmds...)
 			case "esc":
@@ -689,7 +794,7 @@ func (m Model) View() string {
 	help := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240")).
 		Padding(0, 1).
-		Render(fmt.Sprintf("Press 'f' for fullscreen, '/' to search, 'R' to refresh, 'esc' to exit fullscreen/search • Last refresh: %s", m.LastRefresh.Format("15:04:05")))
+		Render(fmt.Sprintf("Press 'f' for fullscreen, '/' to search, 'R' to refresh, 'm' to load more, 'M' to load all, 'esc' to exit fullscreen/search • Last refresh: %s", m.LastRefresh.Format("15:04:05")))
 
 	if m.StatusMessage != "" {
 		help = lipgloss.JoinHorizontal(lipgloss.Left, config.StatusStyle.Render(m.StatusMessage), " • ", help)
@@ -745,10 +850,14 @@ func (m Model) View() string {
 }
 
 func FormatPost(post discourse.Post, contentWidth int) string {
-	p := bluemonday.StrictPolicy()
+	p := bluemonday.UGCPolicy()
+	p.AllowElements("a").AllowAttrs("href").OnElements("a")
+	p.AllowElements("code", "pre", "blockquote", "em", "strong", "br", "p", "div")
+	
 	sanitizedContent := p.Sanitize(post.Cooked)
-
-	text := strings.ReplaceAll(sanitizedContent, "\r\n", "\n")
+	
+	text := convertHTMLToText(sanitizedContent)
+	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
 
 	potentialParagraphs := strings.Split(text, "\n")
@@ -804,6 +913,90 @@ func FormatPost(post discourse.Post, contentWidth int) string {
 		postFooter,
 		likeInfo,
 	}, "\n")
+}
+
+func convertHTMLToText(html string) string {
+	html = strings.ReplaceAll(html, "<br/>", "\n")
+	html = strings.ReplaceAll(html, "<br>", "\n")
+	html = strings.ReplaceAll(html, "</p>", "\n\n")
+	html = strings.ReplaceAll(html, "</div>", "\n")
+	html = strings.ReplaceAll(html, "</blockquote>", "\n")
+	
+	var result strings.Builder
+	var currentTag strings.Builder
+	var inTag bool
+	var inAnchor bool
+	var anchorHref string
+	var anchorText strings.Builder
+	
+	i := 0
+	for i < len(html) {
+		char := html[i]
+		
+		if char == '<' {
+			inTag = true
+			currentTag.Reset()
+		} else if char == '>' && inTag {
+			inTag = false
+			tag := currentTag.String()
+			
+			if strings.HasPrefix(tag, "a ") && strings.Contains(tag, "href=") {
+				inAnchor = true
+				anchorText.Reset()
+				start := strings.Index(tag, `href="`) + 6
+				if start > 5 {
+					end := strings.Index(tag[start:], `"`)
+					if end > 0 {
+						anchorHref = tag[start : start+end]
+					}
+				}
+			} else if tag == "/a" && inAnchor {
+				inAnchor = false
+				linkText := anchorText.String()
+				if linkText == anchorHref || strings.TrimSpace(linkText) == "" {
+					result.WriteString(anchorHref)
+				} else {
+					result.WriteString(fmt.Sprintf("%s (%s)", linkText, anchorHref))
+				}
+				anchorHref = ""
+			} else if tag == "code" {
+				result.WriteString("`")
+			} else if tag == "/code" {
+				result.WriteString("`")
+			} else if tag == "pre" {
+				result.WriteString("\n```\n")
+			} else if tag == "/pre" {
+				result.WriteString("\n```\n")
+			} else if tag == "blockquote" {
+				result.WriteString("\n> ")
+			} else if tag == "strong" || tag == "b" {
+				result.WriteString("**")
+			} else if tag == "/strong" || tag == "/b" {
+				result.WriteString("**")
+			} else if tag == "em" || tag == "i" {
+				result.WriteString("*")
+			} else if tag == "/em" || tag == "/i" {
+				result.WriteString("*")
+			}
+		} else if inTag {
+			currentTag.WriteByte(char)
+		} else if inAnchor {
+			anchorText.WriteByte(char)
+		} else {
+			result.WriteByte(char)
+		}
+		
+		i++
+	}
+	
+	text := result.String()
+	text = strings.ReplaceAll(text, "&lt;", "<")
+	text = strings.ReplaceAll(text, "&gt;", ">")
+	text = strings.ReplaceAll(text, "&amp;", "&")
+	text = strings.ReplaceAll(text, "&quot;", "\"")
+	text = strings.ReplaceAll(text, "&#39;", "'")
+	
+	return text
 }
 
 type loginModel struct {

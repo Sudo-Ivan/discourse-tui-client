@@ -57,6 +57,8 @@ func main() {
 	outputPath := flag.String("output", "", "Output posts to file (txt, json, or html)")
 	flag.StringVar(outputPath, "o", "", "Output posts to file (shorthand)")
 	cooldown := flag.Duration("cooldown", 500*time.Millisecond, "Cooldown between page fetches (e.g. 500ms)")
+	loadAll := flag.Bool("load-all", false, "Load all available topics at startup (may be slow)")
+	flag.BoolVar(loadAll, "a", false, "Load all available topics at startup (shorthand)")
 	flag.Parse()
 
 	if *outputPath != "" {
@@ -259,7 +261,16 @@ func main() {
 
 	if topicsResponse == nil {
 		log.Println("Fetching latest topics from network.")
-		networkResponse, fetchErr := client.GetLatestTopics()
+		var networkResponse *discourse.Response
+		var fetchErr error
+		
+		if *loadAll {
+			log.Println("Loading all available topics (this may take a while)...")
+			networkResponse, fetchErr = client.LoadAllTopics(20)
+		} else {
+			networkResponse, fetchErr = client.GetLatestTopics()
+		}
+		
 		if fetchErr != nil {
 			log.Printf("Failed to fetch topics: %v", fetchErr)
 			fmt.Printf("Failed to fetch topics: %v\n", fetchErr)
@@ -324,8 +335,11 @@ func main() {
 
 	log.Printf("Using %d topics for TUI", len(topicsResponse.TopicList.Topics))
 
+	initialModel := tui.InitialModel(client, topicsResponse.TopicList.Topics)
+	initialModel.MoreTopicsURL = topicsResponse.TopicList.MoreTopicsURL
+	
 	p := tea.NewProgram(
-		tui.InitialModel(client, topicsResponse.TopicList.Topics),
+		initialModel,
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)
