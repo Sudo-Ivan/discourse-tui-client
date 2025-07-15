@@ -59,6 +59,8 @@ func main() {
 	cooldown := flag.Duration("cooldown", 500*time.Millisecond, "Cooldown between page fetches (e.g. 500ms)")
 	loadAll := flag.Bool("load-all", false, "Load all available topics at startup (may be slow)")
 	flag.BoolVar(loadAll, "a", false, "Load all available topics at startup (shorthand)")
+	noAuth := flag.Bool("no-auth", false, "Run in unauthenticated mode.")
+	flag.BoolVar(noAuth, "na", false, "Run in unauthenticated mode (shorthand).")
 	flag.Parse()
 
 	if *outputPath != "" {
@@ -161,64 +163,74 @@ func main() {
 	config.UpdateStyles(loadedColors)
 
 	var client *discourse.Client
-	if *instanceURL != "" {
-		client, err = discourse.NewClient(*instanceURL, defaultCookiesPath)
-		if err != nil {
-			log.Printf("Failed to create client: %v", err)
-			fmt.Printf("Failed to create client: %v\n", err)
+	var clientCookiesPath string
+
+	if *noAuth {
+		log.Println("Running in unauthenticated mode. Skipping login.")
+		clientCookiesPath = "" // No cookies path needed for unauthenticated
+		// If no instance URL is provided in unauthenticated mode, use a default one
+		if *instanceURL == "" {
+			*instanceURL = "https://meta.discourse.org" // A common public Discourse instance
+			log.Printf("No instance URL provided in unauthenticated mode, using default: %s", *instanceURL)
+		}
+	} else {
+		clientCookiesPath = defaultCookiesPath
+		if _, statErr := os.Stat(defaultCookiesPath); os.IsNotExist(statErr) {
+			log.Printf("Cookies file not found at %s. Initiating login.", defaultCookiesPath)
+			loginModel := tui.InitialLoginModel(nil) // Pass nil client initially, it will be created after login
+			p := tea.NewProgram(loginModel)
+			if _, runErr := p.Run(); runErr != nil {
+				log.Printf("Login program error: %v", runErr)
+				fmt.Printf("Login error: %v\n", runErr)
+				os.Exit(1)
+			}
+			if _, statErrAfterLogin := os.Stat(defaultCookiesPath); os.IsNotExist(statErrAfterLogin) {
+				log.Printf("Login failed or was quit, cookies file not created at %s.", defaultCookiesPath)
+				fmt.Println("Login failed or was quit, cookies file not created.")
+				os.Exit(1)
+			}
+			log.Printf("Cookies file successfully created/found at %s after login.", defaultCookiesPath)
+
+			*instanceURL = loginModel.GetInstanceURL() // Update instanceURL from login model
+		}
+
+		if err := client.LoadCookies(defaultCookiesPath); err != nil {
+			log.Printf("Failed to load cookies from %s: %v", defaultCookiesPath, err)
+			fmt.Printf("Failed to load cookies from %s: %v\n", defaultCookiesPath, err)
 			os.Exit(1)
 		}
-		client.SetPageCooldown(*cooldown)
-	} else {
+		log.Printf("Successfully loaded cookies from %s", defaultCookiesPath)
+	}
+
+	// Create the client after determining the instanceURL and cookiesPath
+	if *instanceURL == "" {
 		savedInstance, err := config.LoadInstance()
 		if err != nil {
 			log.Printf("Failed to load saved instance: %v", err)
 		}
 		if savedInstance != "" {
-			client, err = discourse.NewClient(savedInstance, defaultCookiesPath)
-			if err != nil {
-				log.Printf("Failed to create client with saved instance: %v", err)
-			}
-			client.SetPageCooldown(*cooldown)
-		}
-		if client == nil {
-			client, err = discourse.NewClient("https://placeholder.com", defaultCookiesPath)
-			if err != nil {
-				log.Printf("Failed to create temporary client: %v", err)
-				fmt.Printf("Failed to create temporary client: %v\n", err)
-				os.Exit(1)
-			}
-			client.SetPageCooldown(*cooldown)
+			*instanceURL = savedInstance
 		}
 	}
 
-	if _, statErr := os.Stat(defaultCookiesPath); os.IsNotExist(statErr) {
-		log.Printf("Cookies file not found at %s. Initiating login.", defaultCookiesPath)
-		loginModel := tui.InitialLoginModel(client)
-		p := tea.NewProgram(loginModel)
-		if _, runErr := p.Run(); runErr != nil {
-			log.Printf("Login program error: %v", runErr)
-			fmt.Printf("Login error: %v\n", runErr)
-			os.Exit(1)
-		}
-		if _, statErrAfterLogin := os.Stat(defaultCookiesPath); os.IsNotExist(statErrAfterLogin) {
-			log.Printf("Login failed or was quit, cookies file not created at %s.", defaultCookiesPath)
-			fmt.Println("Login failed or was quit, cookies file not created.")
-			os.Exit(1)
-		}
-		log.Printf("Cookies file successfully created/found at %s after login.", defaultCookiesPath)
+	if *instanceURL == "" {
+		*instanceURL = "https://placeholder.com" // Fallback if no URL is provided and not in no-auth mode
+	}
 
-		client, err = discourse.NewClient(loginModel.GetInstanceURL(), defaultCookiesPath)
-		if err != nil {
-			log.Printf("Failed to create client with new URL: %v", err)
-			fmt.Printf("Failed to create client with new URL: %v\n", err)
-			os.Exit(1)
-		}
-		client.SetPageCooldown(*cooldown)
-		instanceName = strings.TrimPrefix(strings.TrimPrefix(loginModel.GetInstanceURL(), "https://"), "http://")
-		latestTopicsCachePath = filepath.Join(appCacheDir, "instances", instanceName, "latest.json")
-		log.Printf("Updated latest topics cache path: %s", latestTopicsCachePath)
+	client, err = discourse.NewClient(*instanceURL, clientCookiesPath)
+	if err != nil {
+		log.Printf("Failed to create client: %v", err)
+		fmt.Printf("Failed to create client: %v\n", err)
+		os.Exit(1)
+	}
+	client.SetPageCooldown(*cooldown)
 
+	instanceName = strings.TrimPrefix(strings.TrimPrefix(*instanceURL, "https://"), "http://")
+	latestTopicsCachePath = filepath.Join(appCacheDir, "instances", instanceName, "latest.json")
+	log.Printf("Updated latest topics cache path: %s", latestTopicsCachePath)
+
+	// Fetch categories only if not in no-auth mode and after successful login/cookie load
+	if !*noAuth {
 		categories, err := client.GetCategories()
 		if err != nil {
 			log.Printf("Warning: Failed to fetch categories after login: %v", err)
@@ -226,13 +238,6 @@ func main() {
 			log.Printf("Successfully fetched %d categories after login", len(categories.CategoryList.Categories))
 		}
 	}
-
-	if err := client.LoadCookies(defaultCookiesPath); err != nil {
-		log.Printf("Failed to load cookies from %s: %v", defaultCookiesPath, err)
-		fmt.Printf("Failed to load cookies from %s: %v\n", defaultCookiesPath, err)
-		os.Exit(1)
-	}
-	log.Printf("Successfully loaded cookies from %s", defaultCookiesPath)
 
 	var topicsResponse *discourse.Response
 
@@ -263,14 +268,14 @@ func main() {
 		log.Println("Fetching latest topics from network.")
 		var networkResponse *discourse.Response
 		var fetchErr error
-		
+
 		if *loadAll {
 			log.Println("Loading all available topics (this may take a while)...")
 			networkResponse, fetchErr = client.LoadAllTopics(20)
 		} else {
 			networkResponse, fetchErr = client.GetLatestTopics()
 		}
-		
+
 		if fetchErr != nil {
 			log.Printf("Failed to fetch topics: %v", fetchErr)
 			fmt.Printf("Failed to fetch topics: %v\n", fetchErr)
@@ -337,7 +342,7 @@ func main() {
 
 	initialModel := tui.InitialModel(client, topicsResponse.TopicList.Topics)
 	initialModel.MoreTopicsURL = topicsResponse.TopicList.MoreTopicsURL
-	
+
 	p := tea.NewProgram(
 		initialModel,
 		tea.WithAltScreen(),
