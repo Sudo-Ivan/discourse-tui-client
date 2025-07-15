@@ -459,11 +459,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case moreTopicsLoadedMsg:
 			m.isLoadingMore = false
 			m.StatusMessage = fmt.Sprintf("Loaded %d more topics!", len(msg.response.TopicList.Topics))
-			
+
 			// Append new topics to existing ones
 			m.Topics = append(m.Topics, msg.response.TopicList.Topics...)
 			m.MoreTopicsURL = msg.response.TopicList.MoreTopicsURL
-			
+
 			// Update list items
 			items := make([]list.Item, len(m.Topics))
 			for i, topic := range m.Topics {
@@ -479,11 +479,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case loadAllTopicsMsg:
 			m.isLoadingAll = false
 			m.StatusMessage = fmt.Sprintf("Loaded all %d topics!", len(msg.response.TopicList.Topics))
-			
+
 			// Replace with all topics
 			m.Topics = msg.response.TopicList.Topics
 			m.MoreTopicsURL = msg.response.TopicList.MoreTopicsURL
-			
+
 			// Update list items
 			items := make([]list.Item, len(m.Topics))
 			for i, topic := range m.Topics {
@@ -853,9 +853,9 @@ func FormatPost(post discourse.Post, contentWidth int) string {
 	p := bluemonday.UGCPolicy()
 	p.AllowElements("a").AllowAttrs("href").OnElements("a")
 	p.AllowElements("code", "pre", "blockquote", "em", "strong", "br", "p", "div")
-	
+
 	sanitizedContent := p.Sanitize(post.Cooked)
-	
+
 	text := convertHTMLToText(sanitizedContent)
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
@@ -921,25 +921,25 @@ func convertHTMLToText(html string) string {
 	html = strings.ReplaceAll(html, "</p>", "\n\n")
 	html = strings.ReplaceAll(html, "</div>", "\n")
 	html = strings.ReplaceAll(html, "</blockquote>", "\n")
-	
+
 	var result strings.Builder
 	var currentTag strings.Builder
 	var inTag bool
 	var inAnchor bool
 	var anchorHref string
 	var anchorText strings.Builder
-	
+
 	i := 0
 	for i < len(html) {
 		char := html[i]
-		
+
 		if char == '<' {
 			inTag = true
 			currentTag.Reset()
 		} else if char == '>' && inTag {
 			inTag = false
 			tag := currentTag.String()
-			
+
 			if strings.HasPrefix(tag, "a ") && strings.Contains(tag, "href=") {
 				inAnchor = true
 				anchorText.Reset()
@@ -985,17 +985,17 @@ func convertHTMLToText(html string) string {
 		} else {
 			result.WriteByte(char)
 		}
-		
+
 		i++
 	}
-	
+
 	text := result.String()
 	text = strings.ReplaceAll(text, "&lt;", "<")
 	text = strings.ReplaceAll(text, "&gt;", ">")
 	text = strings.ReplaceAll(text, "&amp;", "&")
 	text = strings.ReplaceAll(text, "&quot;", "\"")
 	text = strings.ReplaceAll(text, "&#39;", "'")
-	
+
 	return text
 }
 

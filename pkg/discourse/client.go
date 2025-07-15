@@ -142,9 +142,9 @@ type apiCreateTopicPayload struct {
 }
 
 type Client struct {
-	client      *http.Client
-	baseURL     string
-	cookiesPath string
+	client       *http.Client
+	baseURL      string
+	cookiesPath  string
 	pageCooldown time.Duration
 }
 
@@ -178,9 +178,9 @@ func NewClient(baseURL string, cookiesPath string) (*Client, error) {
 	}
 
 	return &Client{
-		client:      client,
-		baseURL:     baseURL,
-		cookiesPath: cookiesPath,
+		client:       client,
+		baseURL:      baseURL,
+		cookiesPath:  cookiesPath,
 		pageCooldown: 500 * time.Millisecond,
 	}, nil
 }
@@ -939,14 +939,14 @@ func (c *Client) GetMoreTopics(moreURL string) (*Response, error) {
 	if moreURL == "" {
 		return nil, fmt.Errorf("no more topics URL provided")
 	}
-	
+
 	var fullURL string
 	if strings.HasPrefix(moreURL, "http") {
 		fullURL = moreURL
 	} else {
 		fullURL = c.baseURL + moreURL
 	}
-	
+
 	resp, err := c.client.Get(fullURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch more topics: %v", err)
@@ -1074,7 +1074,7 @@ func (c *Client) LoadAllTopics(maxPages int) (*Response, error) {
 
 	for page := 1; page < maxPages && currentMoreURL != ""; page++ {
 		time.Sleep(c.pageCooldown)
-		
+
 		moreResp, err := c.GetMoreTopics(currentMoreURL)
 		if err != nil {
 			log.Printf("Warning: failed to fetch page %d: %v", page+1, err)
@@ -1084,7 +1084,7 @@ func (c *Client) LoadAllTopics(maxPages int) (*Response, error) {
 		allTopics = append(allTopics, moreResp.TopicList.Topics...)
 		allUsers = append(allUsers, moreResp.Users...)
 		currentMoreURL = moreResp.TopicList.MoreTopicsURL
-		
+
 		if len(moreResp.TopicList.Topics) == 0 {
 			break
 		}
