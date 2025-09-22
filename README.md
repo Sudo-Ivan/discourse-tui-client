@@ -6,12 +6,6 @@ A simple and fast discourse tui client that doesn't require the user API.
 
 1. Download binaries from [releases](https://github.com/Sudo-Ivan/discourse-tui-client/releases).
 
-2. Go
-
-```bash
-go install github.com/Sudo-Ivan/discourse-tui-client@latest
-```
-
 ## Supported Platforms
 
 - Linux
@@ -23,14 +17,14 @@ go install github.com/Sudo-Ivan/discourse-tui-client@latest
 ## To Do
 
 - [ ] Multiple instances support
-- [ ] Reply and Post (WIP)
+- [ ] Reply and Post
 - [ ] Edit and Delete
 - [ ] Fix URLs (not showing)
 - [ ] Improve keyboard navigation
-- [ ] Performance and Memory usage improvements
 - [ ] Navigate categories and tags
 - [ ] DM support
 - [ ] Fix codeblocks and ASCII art rendering
+- [ ] Cookies.txt file encryption using a pin or password. 
 
 ## Usage
 
@@ -78,7 +72,7 @@ discourse-tui-client --output topics.html # or .txt, .json
 
 This client interacts with Discourse forums by:
 
-1. **Cookie-based Authentication**: Instead of using API tokens, it manages authentication through browser-style cookies stored as `cookies.txt` in users `$HOME/.config/discourse-tui-client/cookies.txt`.
+1. **Cookie-based Authentication**: Instead of using API tokens, it manages authentication through browser-style cookies stored as `cookies.txt` in users `$HOME/.config/discourse-tui-client/cookies.txt`. 
 
 2. **Direct HTTP Requests**: Communicates with Discourse instances through standard HTTP requests to endpoints like `/latest.json` and `/t/{id}.json`.
 
@@ -113,20 +107,6 @@ selected=170
 status=#626262
 error=#FF0000 
 ```
-
-## Contributors
-
-All contributions welcome. 
-
-## FAQ
-
-1. Why txt for config files?
-
-Its simple and because I can. You can always fork and change to your liking. 
-
-2. Why not use API?
-
-Not all discourse instances support the API or allow users to use it.
 
 ## License
 
