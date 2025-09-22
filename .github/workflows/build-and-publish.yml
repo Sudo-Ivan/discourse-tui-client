@@ -10,6 +10,9 @@ on:
 
 jobs:
   build:
+    permissions:
+      contents: read
+      
     strategy:
       matrix:
         goos: [linux, windows, darwin, freebsd]
