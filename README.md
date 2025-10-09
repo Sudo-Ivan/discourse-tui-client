@@ -83,7 +83,7 @@ This client interacts with Discourse forums by:
 4. **Terminal UI**: Features a responsive terminal interface built with Bubble Tea that displays:
    - A navigable list of latest topics
    - Content viewer for reading posts
-   - Search capabilities
+   - Full-text search across all posts and topics
    - Fullscreen mode
 
 5. **Customizable Colors**: Allows theme customization through a simple configuration file `colors.txt` in users `$HOME/.config/discourse-tui-client/colors.txt`.
