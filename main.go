@@ -61,6 +61,8 @@ func main() {
 	flag.BoolVar(loadAll, "a", false, "Load all available topics at startup (shorthand)")
 	noAuth := flag.Bool("no-auth", false, "Run in unauthenticated mode.")
 	flag.BoolVar(noAuth, "na", false, "Run in unauthenticated mode (shorthand).")
+	encryptCookies := flag.Bool("encrypt-cookies", false, "Encrypt cookies file with a password.")
+	flag.BoolVar(encryptCookies, "e", false, "Encrypt cookies file with a password (shorthand).")
 	flag.Parse()
 
 	if *outputPath != "" {
@@ -177,7 +179,7 @@ func main() {
 		clientCookiesPath = defaultCookiesPath
 		if _, statErr := os.Stat(defaultCookiesPath); os.IsNotExist(statErr) {
 			log.Printf("Cookies file not found at %s. Initiating login.", defaultCookiesPath)
-			loginModel := tui.InitialLoginModel(nil, defaultCookiesPath) // Pass nil client initially, it will be created after login
+			loginModel := tui.InitialLoginModel(nil, defaultCookiesPath, *encryptCookies) // Pass nil client initially, it will be created after login
 			p := tea.NewProgram(loginModel)
 			if _, runErr := p.Run(); runErr != nil {
 				log.Printf("Login program error: %v", runErr)
@@ -193,13 +195,6 @@ func main() {
 
 			*instanceURL = loginModel.GetInstanceURL() // Update instanceURL from login model
 		}
-
-		if err := client.LoadCookies(defaultCookiesPath); err != nil {
-			log.Printf("Failed to load cookies from %s: %v", defaultCookiesPath, err)
-			fmt.Printf("Failed to load cookies from %s: %v\n", defaultCookiesPath, err)
-			os.Exit(1)
-		}
-		log.Printf("Successfully loaded cookies from %s", defaultCookiesPath)
 	}
 
 	// Create the client after determining the instanceURL and cookiesPath
@@ -217,13 +212,23 @@ func main() {
 		*instanceURL = "https://placeholder.com" // Fallback if no URL is provided and not in no-auth mode
 	}
 
-	client, err = discourse.NewClient(*instanceURL, clientCookiesPath)
+	client, err = discourse.NewClient(*instanceURL, clientCookiesPath, *encryptCookies)
 	if err != nil {
 		log.Printf("Failed to create client: %v", err)
 		fmt.Printf("Failed to create client: %v\n", err)
 		os.Exit(1)
 	}
 	client.SetPageCooldown(*cooldown)
+
+	// Load cookies if not in no-auth mode
+	if !*noAuth {
+		if err := client.LoadCookies(clientCookiesPath); err != nil {
+			log.Printf("Failed to load cookies from %s: %v", clientCookiesPath, err)
+			fmt.Printf("Failed to load cookies from %s: %v\n", clientCookiesPath, err)
+			os.Exit(1)
+		}
+		log.Printf("Successfully loaded cookies from %s", clientCookiesPath)
+	}
 
 	instanceName = strings.TrimPrefix(strings.TrimPrefix(*instanceURL, "https://"), "http://")
 	latestTopicsCachePath = filepath.Join(appCacheDir, "instances", instanceName, "latest.json")

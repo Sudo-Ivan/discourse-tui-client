@@ -1000,19 +1000,20 @@ func convertHTMLToText(html string) string {
 }
 
 type loginModel struct {
-	client      *discourse.Client
-	cookiesPath string
-	inputs      []textinput.Model
-	focusIndex  int
-	err         error
-	done        bool
+	client         *discourse.Client
+	cookiesPath    string
+	encryptCookies bool
+	inputs         []textinput.Model
+	focusIndex     int
+	err            error
+	done           bool
 }
 
 func (m loginModel) GetInstanceURL() string {
 	return m.inputs[0].Value()
 }
 
-func InitialLoginModel(client *discourse.Client, cookiesPath string) loginModel {
+func InitialLoginModel(client *discourse.Client, cookiesPath string, encryptCookies bool) loginModel {
 	url := textinput.New()
 	url.Placeholder = "Instance URL (e.g. forum.example.com)"
 	url.Focus()
@@ -1031,10 +1032,11 @@ func InitialLoginModel(client *discourse.Client, cookiesPath string) loginModel 
 	password.EchoMode = textinput.EchoPassword
 
 	return loginModel{
-		client:      client,
-		cookiesPath: cookiesPath,
-		inputs:      []textinput.Model{url, username, password},
-		focusIndex:  0,
+		client:         client,
+		cookiesPath:    cookiesPath,
+		encryptCookies: encryptCookies,
+		inputs:         []textinput.Model{url, username, password},
+		focusIndex:     0,
 	}
 }
 
@@ -1067,7 +1069,7 @@ func (m loginModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 
-				newClient, err := discourse.NewClient(instanceURL, m.cookiesPath)
+				newClient, err := discourse.NewClient(instanceURL, m.cookiesPath, m.encryptCookies)
 				if err != nil {
 					m.err = fmt.Errorf("failed to create client: %v", err)
 					return m, nil

@@ -5,6 +5,10 @@ package discourse
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,9 +19,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/tidwall/gjson"
+	"golang.org/x/crypto/pbkdf2"
+	"golang.org/x/term"
+)
+
+const (
+	keyLength  = 32
+	saltLength = 16
+	iterations = 100000
 )
 
 type User struct {
@@ -142,10 +155,12 @@ type apiCreateTopicPayload struct {
 }
 
 type Client struct {
-	client       *http.Client
-	baseURL      string
-	cookiesPath  string
-	pageCooldown time.Duration
+	client         *http.Client
+	baseURL        string
+	cookiesPath    string
+	pageCooldown   time.Duration
+	encryptCookies bool
+	cookiePassword string
 }
 
 func (c *Client) CookiesPath() string {
@@ -156,7 +171,7 @@ func (c *Client) BaseURL() string {
 	return c.baseURL
 }
 
-func NewClient(baseURL string, cookiesPath string) (*Client, error) {
+func NewClient(baseURL string, cookiesPath string, encryptCookies bool) (*Client, error) {
 	if baseURL == "" {
 		return nil, fmt.Errorf("baseURL is required")
 	}
@@ -178,11 +193,103 @@ func NewClient(baseURL string, cookiesPath string) (*Client, error) {
 	}
 
 	return &Client{
-		client:       client,
-		baseURL:      baseURL,
-		cookiesPath:  cookiesPath,
-		pageCooldown: 500 * time.Millisecond,
+		client:         client,
+		baseURL:        baseURL,
+		cookiesPath:    cookiesPath,
+		pageCooldown:   500 * time.Millisecond,
+		encryptCookies: encryptCookies,
 	}, nil
+}
+
+// promptPassword securely prompts for a password
+func promptPassword(prompt string) (string, error) {
+	fmt.Print(prompt)
+	password, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Println() // Print newline after password input
+	return string(password), err
+}
+
+// deriveKey derives a key from password and salt using PBKDF2
+func deriveKey(password string, salt []byte) []byte {
+	return pbkdf2.Key([]byte(password), salt, iterations, keyLength, sha256.New)
+}
+
+// encryptData encrypts data using AES-GCM
+func encryptData(data []byte, password string) ([]byte, error) {
+	// Generate salt
+	salt := make([]byte, saltLength)
+	if _, err := rand.Read(salt); err != nil {
+		return nil, fmt.Errorf("failed to generate salt: %w", err)
+	}
+
+	// Derive key
+	key := deriveKey(password, salt)
+
+	// Create cipher
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cipher: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCM: %w", err)
+	}
+
+	// Generate nonce
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, fmt.Errorf("failed to generate nonce: %w", err)
+	}
+
+	// Encrypt
+	ciphertext := gcm.Seal(nonce, nonce, data, nil)
+
+	// Prepend salt to ciphertext
+	encrypted := append(salt, ciphertext...)
+	return encrypted, nil
+}
+
+// decryptData decrypts data using AES-GCM
+func decryptData(encrypted []byte, password string) ([]byte, error) {
+	if len(encrypted) < saltLength {
+		return nil, fmt.Errorf("encrypted data too short")
+	}
+
+	// Extract salt
+	salt := encrypted[:saltLength]
+	ciphertext := encrypted[saltLength:]
+
+	// Derive key
+	key := deriveKey(password, salt)
+
+	// Create cipher
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cipher: %w", err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCM: %w", err)
+	}
+
+	// Extract nonce
+	nonceSize := gcm.NonceSize()
+	if len(ciphertext) < nonceSize {
+		return nil, fmt.Errorf("ciphertext too short")
+	}
+
+	nonce := ciphertext[:nonceSize]
+	ciphertext = ciphertext[nonceSize:]
+
+	// Decrypt
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt: %w", err)
+	}
+
+	return plaintext, nil
 }
 
 func (c *Client) LoadCookies(cookieFile string) error {
@@ -190,6 +297,25 @@ func (c *Client) LoadCookies(cookieFile string) error {
 	data, err := os.ReadFile(cookieFile)
 	if err != nil {
 		return fmt.Errorf("failed to read cookie file: %v", err)
+	}
+
+	// Handle encrypted cookies
+	if c.encryptCookies {
+		password := c.cookiePassword
+		if password == "" {
+			password, err = promptPassword("Enter password to decrypt cookies: ")
+			if err != nil {
+				return fmt.Errorf("failed to read password: %v", err)
+			}
+			if password == "" {
+				return fmt.Errorf("password cannot be empty")
+			}
+		}
+		data, err = decryptData(data, password)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt cookies: %v", err)
+		}
+		c.cookiePassword = password // Store for later use
 	}
 
 	cookies := strings.Split(string(data), "\n")
@@ -613,7 +739,28 @@ func (c *Client) SaveCookies(cookieFile string) error {
 		cookieStrings = append(cookieStrings, fmt.Sprintf("%s=%s", cookie.Name, cookie.Value))
 	}
 
-	return os.WriteFile(cookieFile, []byte(strings.Join(cookieStrings, "\n")), 0600) //nosec G306
+	data := []byte(strings.Join(cookieStrings, "\n"))
+
+	// Handle encrypted cookies
+	if c.encryptCookies {
+		password := c.cookiePassword
+		if password == "" {
+			password, err = promptPassword("Enter password to encrypt cookies: ")
+			if err != nil {
+				return fmt.Errorf("failed to read password: %v", err)
+			}
+			if password == "" {
+				return fmt.Errorf("password cannot be empty")
+			}
+		}
+		data, err = encryptData(data, password)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt cookies: %v", err)
+		}
+		c.cookiePassword = password // Store for later use
+	}
+
+	return os.WriteFile(cookieFile, data, 0600) //nosec G306
 }
 
 func (c *Client) RefreshTopics() (*Response, error) {
