@@ -177,7 +177,7 @@ func main() {
 		clientCookiesPath = defaultCookiesPath
 		if _, statErr := os.Stat(defaultCookiesPath); os.IsNotExist(statErr) {
 			log.Printf("Cookies file not found at %s. Initiating login.", defaultCookiesPath)
-			loginModel := tui.InitialLoginModel(nil) // Pass nil client initially, it will be created after login
+			loginModel := tui.InitialLoginModel(nil, defaultCookiesPath) // Pass nil client initially, it will be created after login
 			p := tea.NewProgram(loginModel)
 			if _, runErr := p.Run(); runErr != nil {
 				log.Printf("Login program error: %v", runErr)
