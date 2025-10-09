@@ -8,6 +8,8 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/tidwall/gjson v1.18.0
+	golang.org/x/crypto v0.36.0
+	golang.org/x/term v0.30.0
 )
 
 require (
