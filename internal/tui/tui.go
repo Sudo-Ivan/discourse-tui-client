@@ -85,6 +85,11 @@ type loadAllTopicsMsg struct {
 }
 type loadAllTopicsErrorMsg struct{ err error }
 
+type searchResultsMsg struct {
+	response *discourse.SearchResponse
+}
+type searchErrorMsg struct{ err error }
+
 type newTopicModel struct {
 	client        *discourse.Client
 	titleInput    textinput.Model
@@ -496,37 +501,77 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.StatusMessage = fmt.Sprintf("Error loading all topics: %v", msg.err)
 			log.Printf("Failed to load all topics: %v", msg.err)
 			return m, tea.Batch(cmds...)
+		case searchResultsMsg:
+			m.StatusMessage = fmt.Sprintf("Found %d posts and %d topics", len(msg.response.Posts), len(msg.response.Topics))
+			// Convert search results to topics for display
+			var searchTopics []discourse.Topic
+			for _, post := range msg.response.Posts {
+				topic := discourse.Topic{
+					ID:          post.TopicID,
+					Title:       post.Title,
+					Slug:        post.TopicSlug,
+					PostsCount:  0, // We don't have this info from search
+					CreatedAt:   post.CreatedAt,
+					LastPostedAt: post.CreatedAt,
+				}
+				searchTopics = append(searchTopics, topic)
+			}
+			// Add topics from search results
+			for _, topic := range msg.response.Topics {
+				searchTopics = append(searchTopics, topic)
+			}
+			items := make([]list.Item, len(searchTopics))
+			for i, topic := range searchTopics {
+				items[i] = topicItem{topic: topic}
+			}
+			m.List.SetItems(items)
+			return m, tea.Batch(cmds...)
+		case searchErrorMsg:
+			m.StatusMessage = fmt.Sprintf("Search error: %v", msg.err)
+			log.Printf("Search failed: %v", msg.err)
+			return m, tea.Batch(cmds...)
 
 		case tea.KeyMsg:
 			if m.Searching {
 				switch msg.String() {
-				case "esc", "enter":
-					if msg.String() == "enter" {
-						query := m.Search.Value()
-						if query != "" {
-							var filteredTopics []discourse.Topic
-							for _, topic := range m.Topics {
-								if strings.Contains(strings.ToLower(topic.Title), strings.ToLower(query)) {
-									filteredTopics = append(filteredTopics, topic)
-								}
-							}
-							items := make([]list.Item, len(filteredTopics))
-							for i, topic := range filteredTopics {
-								items[i] = topicItem{topic: topic}
-							}
-							m.List.SetItems(items)
-						} else {
-							items := make([]list.Item, len(m.Topics))
-							for i, topic := range m.Topics {
-								items[i] = topicItem{topic: topic}
-							}
-							m.List.SetItems(items)
-						}
-					}
+				case "esc":
 					m.Searching = false
 					m.Search.Blur()
 					m.Search.Reset()
+					// Restore original topics
+					items := make([]list.Item, len(m.Topics))
+					for i, topic := range m.Topics {
+						items[i] = topicItem{topic: topic}
+					}
+					m.List.SetItems(items)
 					return m, nil
+				case "enter":
+					query := m.Search.Value()
+					if query != "" {
+						m.Searching = false
+						m.Search.Blur()
+						m.Search.Reset()
+						m.StatusMessage = fmt.Sprintf("Searching for '%s'...", query)
+						cmds = append(cmds, func() tea.Msg {
+							response, err := m.Client.Search(query)
+							if err != nil {
+								return searchErrorMsg{err: err}
+							}
+							return searchResultsMsg{response: response}
+						})
+						return m, tea.Batch(cmds...)
+					} else {
+						// Empty query, restore original topics
+						items := make([]list.Item, len(m.Topics))
+						for i, topic := range m.Topics {
+							items[i] = topicItem{topic: topic}
+						}
+						m.List.SetItems(items)
+						m.Searching = false
+						m.Search.Blur()
+						m.Search.Reset()
+						return m, nil
+					}
 				default:
 					m.Search, cmd = m.Search.Update(msg)
 					cmds = append(cmds, cmd)

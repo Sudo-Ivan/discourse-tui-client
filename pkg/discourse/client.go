@@ -146,6 +146,27 @@ type CategoryResponse struct {
 	CategoryList CategoryList `json:"category_list"`
 }
 
+type SearchResult struct {
+	ID          int    `json:"id"`
+	Title       string `json:"title"`
+	Slug        string `json:"slug"`
+	PostNumber  int    `json:"post_number"`
+	Blurb       string `json:"blurb"`
+	TopicID     int    `json:"topic_id"`
+	TopicSlug   string `json:"topic_slug"`
+	Username    string `json:"username"`
+	Avatar      string `json:"avatar_template"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type SearchResponse struct {
+	Posts    []SearchResult `json:"posts"`
+	Topics   []Topic        `json:"topics"`
+	Users    []User         `json:"users"`
+	Groups   []interface{}  `json:"groups"`
+	Category []interface{}  `json:"categories"`
+}
+
 type apiCreateTopicPayload struct {
 	Title     string   `json:"title"`
 	Raw       string   `json:"raw"`
@@ -1251,4 +1272,47 @@ func (c *Client) LoadAllTopics(maxPages int) (*Response, error) {
 	}
 
 	return result, nil
+}
+
+func (c *Client) Search(query string) (*SearchResponse, error) {
+	if query == "" {
+		return nil, fmt.Errorf("search query cannot be empty")
+	}
+
+	// URL encode the query
+	encodedQuery := url.QueryEscape(query)
+	searchURL := fmt.Sprintf("%s/search/query?term=%s", c.baseURL, encodedQuery)
+
+	req, err := http.NewRequest("GET", searchURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create search request: %w", err)
+	}
+
+	req.Header.Set("accept", "application/json, text/javascript, */*; q=0.01")
+	req.Header.Set("discourse-present", "true")
+	req.Header.Set("x-requested-with", "XMLHttpRequest")
+	req.Header.Set("user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute search request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("search API error: %s - %s", resp.Status, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read search response body: %w", err)
+	}
+
+	var searchResponse SearchResponse
+	if err := json.Unmarshal(body, &searchResponse); err != nil {
+		return nil, fmt.Errorf("failed to parse search response: %w", err)
+	}
+
+	return &searchResponse, nil
 }
