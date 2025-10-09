@@ -23,8 +23,7 @@ A simple and fast discourse tui client that doesn't require the user API.
 - [ ] Improve keyboard navigation
 - [ ] Navigate categories and tags
 - [ ] DM support
-- [ ] Fix codeblocks and ASCII art rendering
-- [ ] Cookies.txt file encryption using a pin or password. 
+- [ ] Fix codeblocks and ASCII art rendering 
 
 ## Usage
 
@@ -46,6 +45,9 @@ Arguments:
   -d    Enable debug logging (shorthand).
   -debug
         Enable debug logging.
+  -e    Encrypt cookies file with a password (shorthand).
+  -encrypt-cookies
+        Encrypt cookies file with a password.
   -l    Logout and delete cookies (shorthand).
   -logout
         Logout and delete cookies.
@@ -72,7 +74,7 @@ discourse-tui-client --output topics.html # or .txt, .json
 
 This client interacts with Discourse forums by:
 
-1. **Cookie-based Authentication**: Instead of using API tokens, it manages authentication through browser-style cookies stored as `cookies.txt` in users `$HOME/.config/discourse-tui-client/cookies.txt`. 
+1. **Cookie-based Authentication**: Instead of using API tokens, it manages authentication through browser-style cookies stored as `cookies.txt` in users `$HOME/.config/discourse-tui-client/cookies.txt`. Optionally, cookies can be encrypted using AES-GCM encryption with a user-provided password. 
 
 2. **Direct HTTP Requests**: Communicates with Discourse instances through standard HTTP requests to endpoints like `/latest.json` and `/t/{id}.json`.
 
@@ -94,6 +96,22 @@ Go external dependencies:
 - [bluemonday](https://github.com/microcosm-cc/bluemonday)
 - [gjson](https://github.com/tidwall/gjson)
 
+## Cookie Encryption
+
+For enhanced security, you can encrypt your cookies file using AES-GCM encryption with a password. Use the `--encrypt-cookies` or `-e` flag when running the application.
+
+When encryption is enabled:
+- You'll be prompted to enter a password when logging in and when the application starts
+- The cookies file will be stored in encrypted form on disk
+- The same password must be used to decrypt the cookies later
+
+Example:
+```bash
+discourse-tui-client --encrypt-cookies
+```
+
+**Note**: If you forget your encryption password, you'll need to log in again to recreate the cookies file.
+
 ## Customizing Colors
 
 The colors are customizable through a simple configuration file `colors.txt` in $HOME/.config/discourse-tui-client/colors.txt.
@@ -105,7 +123,7 @@ title=#FAFAFA
 item=#FFFFFF
 selected=170
 status=#626262
-error=#FF0000 
+error=#FF0000
 ```
 
 ## License
