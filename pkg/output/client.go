@@ -5,7 +5,7 @@ package output
 
 import (
 	"fmt"
-	"github.com/Sudo-Ivan/discourse-tui-client/pkg/discourse"
+	"git.quad4.io/discourse-tui-client/pkg/discourse"
 )
 
 var client *discourse.Client

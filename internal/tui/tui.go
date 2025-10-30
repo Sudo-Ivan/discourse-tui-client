@@ -18,8 +18,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/microcosm-cc/bluemonday"
 
-	"github.com/Sudo-Ivan/discourse-tui-client/internal/config"
-	"github.com/Sudo-Ivan/discourse-tui-client/pkg/discourse"
+	"git.quad4.io/discourse-tui-client/internal/config"
+	"git.quad4.io/discourse-tui-client/pkg/discourse"
 )
 
 type topicItem struct {

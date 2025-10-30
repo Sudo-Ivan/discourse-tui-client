@@ -1,4 +1,4 @@
-module github.com/Sudo-Ivan/discourse-tui-client
+module git.quad4.io/discourse-tui-client
 
 go 1.25.3
 

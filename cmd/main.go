@@ -16,10 +16,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/Sudo-Ivan/discourse-tui-client/internal/config"
-	"github.com/Sudo-Ivan/discourse-tui-client/internal/tui"
-	"github.com/Sudo-Ivan/discourse-tui-client/pkg/discourse"
-	"github.com/Sudo-Ivan/discourse-tui-client/pkg/output"
+	"git.quad4.io/discourse-tui-client/internal/config"
+	"git.quad4.io/discourse-tui-client/internal/tui"
+	"git.quad4.io/discourse-tui-client/pkg/discourse"
+	"git.quad4.io/discourse-tui-client/pkg/output"
 )
 
 func setupLogging() (*os.File, error) {

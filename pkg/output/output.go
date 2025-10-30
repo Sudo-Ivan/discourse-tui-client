@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Sudo-Ivan/discourse-tui-client/pkg/discourse"
+	"git.quad4.io/discourse-tui-client/pkg/discourse"
 )
 
 type Formatter interface {
