@@ -2,17 +2,14 @@
 
 A simple and fast discourse tui client that doesn't require the user API.
 
-## Install
-
-1. Download binaries from [releases](https://github.com/Sudo-Ivan/discourse-tui-client/releases).
-
 ## Supported Platforms
 
 - Linux
 - FreeBSD
+- OpenBSD
 - MacOS
 - Windows
-- Arm
+- ARM64 and v6,v7 (Raspberry Pi, etc.)
 
 ## To Do
 
@@ -24,6 +21,47 @@ A simple and fast discourse tui client that doesn't require the user API.
 - [ ] Navigate categories and tags
 - [ ] DM support
 - [ ] Fix codeblocks and ASCII art rendering 
+
+## Installation
+
+### Script
+
+Run the installation script directly from the repository:
+
+```bash
+# Using curl
+curl -fsSL https://git.quad4.io/Ivan/discourse-tui-client/raw/branch/main/install.sh | sh
+
+# Using wget
+wget -qO- https://git.quad4.io/Ivan/discourse-tui-client/raw/branch/main/install.sh | sh
+
+# Or download and run manually
+curl -fsSL https://git.quad4.io/Ivan/discourse-tui-client/raw/branch/main/install.sh -o install.sh
+chmod +x install.sh
+./install.sh
+```
+
+### Binary Releases
+
+1. Download the binary from the [releases](https://github.com/Sudo-Ivan/discourse-tui-client/releases) page.
+2. Make the binary executable:
+```bash
+chmod +x discourse-tui-client
+```
+3. Move the binary to a directory in your PATH:
+```bash
+sudo mv discourse-tui-client /usr/local/bin/
+```
+4. Run the client:
+```bash
+discourse-tui-client
+```
+
+### From source
+
+```bash
+go install github.com/Sudo-Ivan/discourse-tui-client@latest
+```
 
 ## Usage
 
