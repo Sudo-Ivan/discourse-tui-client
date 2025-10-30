@@ -9,6 +9,7 @@ set -e
 REPO="Sudo-Ivan/discourse-tui-client"
 BINARY_NAME="discourse-tui"
 INSTALL_DIR="/usr/local/bin"
+MAN_DIR="/usr/local/share/man/man1"
 GITHUB_API="https://api.github.com/repos/${REPO}/releases/latest"
 
 # Colors for output
@@ -150,6 +151,16 @@ get_latest_release() {
 
     log_info "Download URL: $DOWNLOAD_URL"
 
+    # Find man page asset
+    MAN_ASSET_NAME="${BINARY_NAME}.1.gz"
+    MAN_DOWNLOAD_URL=$(echo "$RELEASE_JSON" | grep "browser_download_url.*${MAN_ASSET_NAME}" | sed 's/.*"browser_download_url"[ ]*:[ ]*"//;s/".*//' | head -1)
+
+    if [ -n "$MAN_DOWNLOAD_URL" ]; then
+        log_info "Man page URL found: $MAN_DOWNLOAD_URL"
+    else
+        log_warning "No man page asset found in release"
+    fi
+
     SHA256_URL=$(echo "$RELEASE_JSON" | grep "browser_download_url.*${ASSET_NAME}\.sha256" | sed 's/.*"browser_download_url"[ ]*:[ ]*"//;s/".*//' | head -1)
 
     if [ -n "$SHA256_URL" ]; then
@@ -256,16 +267,37 @@ install_binary() {
     chmod +x "$temp_file"
 
     # Install with sudo
-    log_info "Installing to $INSTALL_DIR (requires sudo)..."
+    log_info "Installing binary to $INSTALL_DIR (requires sudo)..."
 
     if ! sudo mv "$temp_file" "$INSTALL_DIR/$BINARY_NAME"; then
-        log_error "Installation failed"
+        log_error "Binary installation failed"
         rm -f "$temp_file"
         exit 1
     fi
 
+    # Install man page if available
+    if [ -n "$MAN_DOWNLOAD_URL" ]; then
+        temp_man_file="/tmp/${BINARY_NAME}.1.gz"
+        download_file "$MAN_DOWNLOAD_URL" "$temp_man_file"
+
+        log_info "Installing man page to $MAN_DIR (requires sudo)..."
+
+        # Create man directory if it doesn't exist
+        sudo mkdir -p "$MAN_DIR"
+
+        if ! sudo mv "$temp_man_file" "$MAN_DIR/${BINARY_NAME}.1.gz"; then
+            log_error "Man page installation failed"
+            rm -f "$temp_man_file"
+            exit 1
+        fi
+
+        log_success "Man page installed!"
+    else
+        log_info "No man page available for installation"
+    fi
+
     log_success "Installation completed!"
-    log_info "Run '$BINARY_NAME --help' to get started"
+    log_info "Run '$BINARY_NAME --help' or 'man $BINARY_NAME' to get started"
 }
 
 # Main function

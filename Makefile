@@ -7,18 +7,25 @@ GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) mod download
 
 BUILD_DIR=build
+MAN_DIR=man
 
 LDFLAGS_RELEASE=-ldflags="-s -w"
 
 LDFLAGS_DEBUG=-ldflags=""
 
-all: release
+all: release man
 
 release:
 	CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS_RELEASE) -a -installsuffix cgo -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd
 
 debug:
 	$(GOBUILD) $(LDFLAGS_DEBUG) -o $(BUILD_DIR)/$(BINARY_NAME)-debug ./cmd
+
+man: $(BUILD_DIR)/$(BINARY_NAME).1.gz
+
+$(BUILD_DIR)/$(BINARY_NAME).1.gz: $(MAN_DIR)/$(BINARY_NAME).1
+	mkdir -p $(BUILD_DIR)
+	gzip -c $< > $@
 
 run:
 	$(GOCMD) run ./cmd
@@ -52,6 +59,7 @@ cross-build:
 clean:
 	$(GOCLEAN)
 	rm -rf $(BUILD_DIR)
+	rm -f $(MAN_DIR)/*.gz
 
 test:
 	$(GOTEST) -v ./...
@@ -71,10 +79,10 @@ deps:
 install-deps:
 	$(GOGET) -u
 
-install:
+install: release man
 	./install.sh
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-.PHONY: all release debug run cross-build clean test scan deps install-deps install
+.PHONY: all release debug man run cross-build clean test scan deps install-deps install

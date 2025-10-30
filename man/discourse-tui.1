@@ -1,0 +1,115 @@
+.TH DISCOURSE-TUI 1 "2025-10-30" "discourse-tui-client" "User Commands"
+.SH NAME
+discourse-tui \- Terminal UI client for Discourse forums
+.SH SYNOPSIS
+.B discourse-tui
+[\fB\-\-debug\fR|\fB\-d\fR]
+[\fB\-\-cookies\fR|\fB\-c\fR \fIFILE\fR]
+[\fB\-\-url\fR|\fB\-u\fR \fIURL\fR]
+[\fB\-\-logout\fR|\fB\-l\fR]
+[\fB\-\-reset\-cache\fR|\fB\-r\fR]
+[\fB\-\-output\fR|\fB\-o\fR \fIFILE\fR]
+[\fB\-\-cooldown\fR \fIDURATION\fR]
+[\fB\-\-load\-all\fR|\fB\-a\fR]
+[\fB\-\-no\-auth\fR|\fB\-na\fR]
+[\fB\-\-encrypt\-cookies\fR|\fB\-e\fR]
+.SH DESCRIPTION
+.B discourse-tui
+is a terminal user interface client for browsing Discourse forums. It provides an interactive way to read topics, posts, and participate in discussions without requiring API tokens. The client uses cookie-based authentication and supports offline caching for improved performance.
+.PP
+The client features a responsive terminal interface for navigating topics, reading posts, searching content, and creating new topics and posts. It supports multiple Discourse instances and can operate in both authenticated and unauthenticated modes.
+.SH OPTIONS
+.TP
+.BR \-d ", " \-\-debug
+Enable debug logging to the log file.
+.TP
+.BR \-c ", " \-\-cookies " \fIFILE\fR"
+Specify the path to the cookies file. If not provided, uses the default location ~/.config/discourse-tui-client/cookies.txt.
+.TP
+.BR \-u ", " \-\-url " \fIURL\fR"
+Specify the Discourse instance URL (e.g., https://forum.example.com). If not provided in authenticated mode, will prompt during login.
+.TP
+.BR \-l ", " \-\-logout
+Logout by deleting the cookies file and exit.
+.TP
+.BR \-r ", " \-\-reset\-cache
+Reset the local cache and force fresh data fetch.
+.TP
+.BR \-o ", " \-\-output " \fIFILE\fR"
+Export topics to a file. Supported formats: .txt, .json, .html. When this option is used, the TUI will not start.
+.TP
+.BR \-\-cooldown " \fIDURATION\fR"
+Set cooldown duration between page fetches (default: 500ms). Examples: 500ms, 1s, 2s.
+.TP
+.BR \-a ", " \-\-load\-all
+Load all available topics at startup (may be slow for large forums).
+.TP
+.BR \-na ", " \-\-no\-auth
+Run in unauthenticated mode. Allows browsing public forums without login.
+.TP
+.BR \-e ", " \-\-encrypt\-cookies
+Encrypt the cookies file with AES-GCM encryption using a password.
+.SH EXAMPLES
+.TP
+Start the client with default settings:
+.B discourse-tui
+.TP
+Connect to a specific forum instance:
+.B discourse-tui \-\-url https://forum.example.com
+.TP
+Export topics to HTML file:
+.B discourse-tui \-\-output topics.html
+.TP
+Run in unauthenticated mode on a public forum:
+.B discourse-tui \-\-no\-auth \-\-url https://meta.discourse.org
+.TP
+Use custom cookies file with encryption:
+.B discourse-tui \-\-cookies ~/my-cookies.txt \-\-encrypt\-cookies
+.TP
+Reset cache and enable debug logging:
+.B discourse-tui \-\-reset\-cache \-\-debug
+.SH FILES
+.TP
+.I ~/.config/discourse-tui-client/cookies.txt
+Default location for storing authentication cookies. Can be encrypted with AES-GCM.
+.TP
+.I ~/.config/discourse-tui-client/colors.txt
+Configuration file for customizing UI colors. Format: key=value (e.g., title=#FAFAFA).
+.TP
+.I ~/.cache/discourse-tui-client/instances/*/latest.json
+Cached topic data for offline access.
+.TP
+.I ~/.cache/discourse-tui-client/logs/activity.log
+Debug log file (only created when debug mode is enabled).
+.SH COOKIE ENCRYPTION
+When using the \fB\-\-encrypt\-cookies\fR flag, the cookies file is encrypted using AES-GCM encryption. You will be prompted to enter a password during login and whenever the application starts. The same password must be used to decrypt the cookies.
+.PP
+\fBNote:\fR If you forget your encryption password, you will need to log in again to recreate the cookies file.
+.SH COLOR CUSTOMIZATION
+The client supports color customization through the colors.txt configuration file. The file uses a simple key=value format where values can be hex colors (e.g., #FAFAFA) or ANSI color codes.
+.PP
+Available keys:
+.RS
+.IP title
+Color for titles
+.IP item
+Color for list items
+.IP selected
+Color for selected items (ANSI code or hex)
+.IP status
+Color for status messages
+.IP error
+Color for error messages
+.RE
+.SH EXIT STATUS
+.TP
+.B 0
+Success
+.TP
+.B 1
+Error occurred (authentication failure, network issues, invalid arguments, etc.)
+.SH SEE ALSO
+.BR curl (1),
+.BR wget (1)
+.SH AUTHOR
+Sudo-Ivan <https://github.com/Sudo-Ivan/discourse-tui-client>
