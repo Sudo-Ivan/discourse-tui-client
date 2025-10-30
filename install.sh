@@ -150,13 +150,12 @@ get_latest_release() {
 
     log_info "Download URL: $DOWNLOAD_URL"
 
-    # Try to get SHA256 hash from checksums file
-    SHA256_URL=$(echo "$RELEASE_JSON" | grep "browser_download_url.*checksums.*txt" | sed 's/.*"browser_download_url"[ ]*:[ ]*"//;s/".*//' | head -1)
+    SHA256_URL=$(echo "$RELEASE_JSON" | grep "browser_download_url.*${ASSET_NAME}\.sha256" | sed 's/.*"browser_download_url"[ ]*:[ ]*"//;s/".*//' | head -1)
 
     if [ -n "$SHA256_URL" ]; then
-        log_info "Checksums URL found: $SHA256_URL"
+        log_info "SHA256 checksum URL found: $SHA256_URL"
     else
-        log_warning "No checksums file found in release"
+        log_warning "No SHA256 checksum file found in release"
     fi
 }
 
@@ -247,10 +246,10 @@ install_binary() {
 
     # Verify checksum if available
     if [ -n "$SHA256_URL" ]; then
-        download_file "$SHA256_URL" "/tmp/checksums.txt"
-        EXPECTED_HASH=$(grep "$ASSET_NAME" "/tmp/checksums.txt" | awk '{print $1}')
+        download_file "$SHA256_URL" "/tmp/checksum.sha256"
+        EXPECTED_HASH=$(cat "/tmp/checksum.sha256" | tr -d '\n')
         verify_checksum "$temp_file" "$EXPECTED_HASH"
-        rm -f "/tmp/checksums.txt"
+        rm -f "/tmp/checksum.sha256"
     fi
 
     # Make executable

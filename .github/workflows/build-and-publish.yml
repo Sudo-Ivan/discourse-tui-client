@@ -74,7 +74,9 @@ jobs:
           output_name+="-v${GOARM}"
         fi
         go build -v -ldflags="-s -w" -o "${output_name}" ./cmd
+        sha256sum "${output_name}" > "${output_name}.sha256"
         echo "Built: ${output_name}"
+        echo "Generated checksum: ${output_name}.sha256"
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
