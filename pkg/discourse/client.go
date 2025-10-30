@@ -298,19 +298,24 @@ func (c *Client) GetLatestTopics() (*Response, error) {
 		}
 	}
 
+	if !gjson.ValidBytes(body) {
+		return nil, fmt.Errorf("invalid JSON response from server")
+	}
+
 	result := gjson.ParseBytes(body)
 	response := &Response{}
 
 	// Parse users
 	users := result.Get("users")
 	users.ForEach(func(_, value gjson.Result) bool {
+		results := gjson.GetMany(value.Raw, "id", "username", "name", "avatar_template", "trust_level", "moderator")
 		user := User{
-			ID:             int(value.Get("id").Int()),
-			Username:       value.Get("username").Str,
-			Name:           value.Get("name").Str,
-			AvatarTemplate: value.Get("avatar_template").Str,
-			TrustLevel:     int(value.Get("trust_level").Int()),
-			Moderator:      value.Get("moderator").Bool(),
+			ID:             int(results[0].Int()),
+			Username:       results[1].Str,
+			Name:           results[2].Str,
+			AvatarTemplate: results[3].Str,
+			TrustLevel:     int(results[4].Int()),
+			Moderator:      results[5].Bool(),
 		}
 		response.Users = append(response.Users, user)
 		return true
@@ -412,6 +417,9 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read initial topic response body: %w", err)
 	}
+	if !gjson.ValidBytes(data) {
+		return nil, fmt.Errorf("invalid JSON response from server")
+	}
 	initial := gjson.ParseBytes(data)
 
 	// Collect post IDs
@@ -427,26 +435,28 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 		response := &TopicResponse{}
 		posts := initial.Get("post_stream.posts")
 		posts.ForEach(func(_, value gjson.Result) bool {
+			results := gjson.GetMany(value.Raw, "id", "name", "username", "created_at", "cooked", "post_number", "reply_count", "topic_id", "topic_slug", "reads", "score")
 			post := Post{
-				ID:         int(value.Get("id").Int()),
-				Name:       value.Get("name").Str,
-				Username:   value.Get("username").Str,
-				CreatedAt:  value.Get("created_at").Time(),
-				Cooked:     value.Get("cooked").Str,
-				PostNumber: int(value.Get("post_number").Int()),
-				ReplyCount: int(value.Get("reply_count").Int()),
-				TopicID:    int(value.Get("topic_id").Int()),
-				TopicSlug:  value.Get("topic_slug").Str,
-				Reads:      int(value.Get("reads").Int()),
-				Score:      value.Get("score").Float(),
+				ID:         int(results[0].Int()),
+				Name:       results[1].Str,
+				Username:   results[2].Str,
+				CreatedAt:  results[3].Time(),
+				Cooked:     results[4].Str,
+				PostNumber: int(results[5].Int()),
+				ReplyCount: int(results[6].Int()),
+				TopicID:    int(results[7].Int()),
+				TopicSlug:  results[8].Str,
+				Reads:      int(results[9].Int()),
+				Score:      results[10].Float(),
 			}
 			actions := value.Get("actions_summary")
 			actions.ForEach(func(_, a gjson.Result) bool {
+				actionResults := gjson.GetMany(a.Raw, "id", "count", "acted", "can_undo")
 				action := ActionsSummary{
-					ID:      int(a.Get("id").Int()),
-					Count:   int(a.Get("count").Int()),
-					Acted:   a.Get("acted").Bool(),
-					CanUndo: a.Get("can_undo").Bool(),
+					ID:      int(actionResults[0].Int()),
+					Count:   int(actionResults[1].Int()),
+					Acted:   actionResults[2].Bool(),
+					CanUndo: actionResults[3].Bool(),
 				}
 				post.ActionsSummary = append(post.ActionsSummary, action)
 				return true
@@ -486,30 +496,35 @@ func (c *Client) GetTopicPosts(topicID int) (*TopicResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read full posts response: %w", err)
 	}
+	if !gjson.ValidBytes(fullData) {
+		return nil, fmt.Errorf("invalid JSON response from server")
+	}
 	result := gjson.ParseBytes(fullData)
 	response := &TopicResponse{}
 	postsArray := result.Get("post_stream.posts")
 	postsArray.ForEach(func(_, value gjson.Result) bool {
+		results := gjson.GetMany(value.Raw, "id", "name", "username", "created_at", "cooked", "post_number", "reply_count", "topic_id", "topic_slug", "reads", "score")
 		post := Post{
-			ID:         int(value.Get("id").Int()),
-			Name:       value.Get("name").Str,
-			Username:   value.Get("username").Str,
-			CreatedAt:  value.Get("created_at").Time(),
-			Cooked:     value.Get("cooked").Str,
-			PostNumber: int(value.Get("post_number").Int()),
-			ReplyCount: int(value.Get("reply_count").Int()),
-			TopicID:    int(value.Get("topic_id").Int()),
-			TopicSlug:  value.Get("topic_slug").Str,
-			Reads:      int(value.Get("reads").Int()),
-			Score:      value.Get("score").Float(),
+			ID:         int(results[0].Int()),
+			Name:       results[1].Str,
+			Username:   results[2].Str,
+			CreatedAt:  results[3].Time(),
+			Cooked:     results[4].Str,
+			PostNumber: int(results[5].Int()),
+			ReplyCount: int(results[6].Int()),
+			TopicID:    int(results[7].Int()),
+			TopicSlug:  results[8].Str,
+			Reads:      int(results[9].Int()),
+			Score:      results[10].Float(),
 		}
 		actions := value.Get("actions_summary")
 		actions.ForEach(func(_, a gjson.Result) bool {
+			actionResults := gjson.GetMany(a.Raw, "id", "count", "acted", "can_undo")
 			action := ActionsSummary{
-				ID:      int(a.Get("id").Int()),
-				Count:   int(a.Get("count").Int()),
-				Acted:   a.Get("acted").Bool(),
-				CanUndo: a.Get("can_undo").Bool(),
+				ID:      int(actionResults[0].Int()),
+				Count:   int(actionResults[1].Int()),
+				Acted:   actionResults[2].Bool(),
+				CanUndo: actionResults[3].Bool(),
 			}
 			post.ActionsSummary = append(post.ActionsSummary, action)
 			return true
@@ -538,30 +553,35 @@ func (c *Client) GetTopicPostsPage(topicID, page int) (*TopicResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read initial topic page: %w", err)
 	}
+	if !gjson.ValidBytes(data) {
+		return nil, fmt.Errorf("invalid JSON response from server")
+	}
 	result := gjson.ParseBytes(data)
 	response := &TopicResponse{}
 	posts := result.Get("post_stream.posts")
 	posts.ForEach(func(_, value gjson.Result) bool {
+		results := gjson.GetMany(value.Raw, "id", "name", "username", "created_at", "cooked", "post_number", "reply_count", "topic_id", "topic_slug", "reads", "score")
 		post := Post{
-			ID:         int(value.Get("id").Int()),
-			Name:       value.Get("name").Str,
-			Username:   value.Get("username").Str,
-			CreatedAt:  value.Get("created_at").Time(),
-			Cooked:     value.Get("cooked").Str,
-			PostNumber: int(value.Get("post_number").Int()),
-			ReplyCount: int(value.Get("reply_count").Int()),
-			TopicID:    int(value.Get("topic_id").Int()),
-			TopicSlug:  value.Get("topic_slug").Str,
-			Reads:      int(value.Get("reads").Int()),
-			Score:      value.Get("score").Float(),
+			ID:         int(results[0].Int()),
+			Name:       results[1].Str,
+			Username:   results[2].Str,
+			CreatedAt:  results[3].Time(),
+			Cooked:     results[4].Str,
+			PostNumber: int(results[5].Int()),
+			ReplyCount: int(results[6].Int()),
+			TopicID:    int(results[7].Int()),
+			TopicSlug:  results[8].Str,
+			Reads:      int(results[9].Int()),
+			Score:      results[10].Float(),
 		}
 		actions := value.Get("actions_summary")
 		actions.ForEach(func(_, a gjson.Result) bool {
+			actionResults := gjson.GetMany(a.Raw, "id", "count", "acted", "can_undo")
 			action := ActionsSummary{
-				ID:      int(a.Get("id").Int()),
-				Count:   int(a.Get("count").Int()),
-				Acted:   a.Get("acted").Bool(),
-				CanUndo: a.Get("can_undo").Bool(),
+				ID:      int(actionResults[0].Int()),
+				Count:   int(actionResults[1].Int()),
+				Acted:   actionResults[2].Bool(),
+				CanUndo: actionResults[3].Bool(),
 			}
 			post.ActionsSummary = append(post.ActionsSummary, action)
 			return true
@@ -599,8 +619,16 @@ func (c *Client) GetCSRFToken() (string, error) {
 		return "", fmt.Errorf("failed to read response body: %v", err)
 	}
 
+	if !gjson.ValidBytes(body) {
+		return "", fmt.Errorf("invalid JSON response from server")
+	}
+
 	result := gjson.ParseBytes(body)
-	csrf := result.Get("csrf").Str
+	csrfResult := result.Get("csrf")
+	if !csrfResult.Exists() {
+		return "", fmt.Errorf("CSRF token not found in response")
+	}
+	csrf := csrfResult.Str
 	if csrf == "" {
 		return "", fmt.Errorf("empty CSRF token in response")
 	}
