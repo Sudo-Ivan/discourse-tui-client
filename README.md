@@ -15,6 +15,7 @@ A simple and fast discourse tui client that doesn't require the user API.
 - **Customizable colors**: Theme customization via configuration file
 - **Keyboard navigation**: Efficient keyboard shortcuts for all operations
 - **Create Posts**: Create new posts directly from the TUI
+- **No presence tracking**: No presence tracking for reading time or typing indication.
 
 ## Supported Platforms
 
@@ -30,11 +31,11 @@ A simple and fast discourse tui client that doesn't require the user API.
 - [ ] Multiple instances support
 - [ ] Reply
 - [ ] Edit and Delete
-- [ ] Fix URLs (not showing)
 - [ ] Improve keyboard navigation
 - [ ] Navigate categories and tags
 - [ ] DM support
 - [ ] Fix codeblocks and ASCII art rendering 
+- [ ] Fix fetching all topics 
 
 ## Installation
 
