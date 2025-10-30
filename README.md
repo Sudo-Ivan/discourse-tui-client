@@ -2,6 +2,20 @@
 
 A simple and fast discourse tui client that doesn't require the user API.
 
+## Features
+
+- **Authentication**: Cookie-based authentication with optional AES-GCM encryption for the cookie file.
+- **Multi-instance support**: Connect to different Discourse forums
+- **Offline access**: Local caching of topics and posts for offline reading
+- **Terminal UI**: Interactive TUI for browsing topics and reading posts
+- **Search functionality**: Full-text search across posts and topics
+- **Topic creation**: Create new topics directly from the TUI
+- **Export options**: Save topics to text, JSON, or HTML files
+- **Unauthenticated mode**: Browse public forums without login
+- **Customizable colors**: Theme customization via configuration file
+- **Keyboard navigation**: Efficient keyboard shortcuts for all operations
+- **Create Posts**: Create new posts directly from the TUI
+
 ## Supported Platforms
 
 - Linux
@@ -14,7 +28,7 @@ A simple and fast discourse tui client that doesn't require the user API.
 ## To Do
 
 - [ ] Multiple instances support
-- [ ] Reply and Post
+- [ ] Reply
 - [ ] Edit and Delete
 - [ ] Fix URLs (not showing)
 - [ ] Improve keyboard navigation
