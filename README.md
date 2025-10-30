@@ -60,7 +60,7 @@ discourse-tui-client
 ### From source
 
 ```bash
-go install github.com/Sudo-Ivan/discourse-tui-client@latest
+go install git.quad4.io/Ivan/discourse-tui-client@latest
 ```
 
 ## Usage
