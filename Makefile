@@ -20,6 +20,9 @@ release:
 debug:
 	$(GOBUILD) $(LDFLAGS_DEBUG) -o $(BUILD_DIR)/$(BINARY_NAME)-debug ./cmd
 
+run:
+	$(GOCMD) run ./cmd
+
 cross-build:
 	@if [ -z "$(GOOS)" ] || [ -z "$(GOARCH)" ]; then \
 		echo "Error: GOOS and GOARCH must be specified"; \
@@ -74,4 +77,4 @@ install:
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-.PHONY: all release debug cross-build clean test scan deps install-deps install
+.PHONY: all release debug run cross-build clean test scan deps install-deps install
