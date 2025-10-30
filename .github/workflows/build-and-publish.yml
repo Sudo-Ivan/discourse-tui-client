@@ -2,11 +2,11 @@ name: Go Build Multi-Platform
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
     tags:
       - 'v*'
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
 
 jobs:
   build:
@@ -15,8 +15,14 @@ jobs:
       
     strategy:
       matrix:
-        goos: [linux, windows, darwin, freebsd]
-        goarch: [amd64, arm64, arm]
+        goos: [linux, windows, darwin, freebsd, openbsd]
+        goarch: [amd64, arm64, arm, 386]
+        goarm: ['']
+        include:
+          - goarch: arm
+            goarm: '6'
+          - goarch: arm
+            goarm: '7'
         exclude:
           - goos: windows
             goarch: arm64
@@ -26,10 +32,18 @@ jobs:
             goarch: arm64
           - goos: darwin
             goarch: arm
+          - goos: darwin
+            goarch: 386
           - goos: freebsd
             goarch: arm64
           - goos: freebsd
             goarch: arm
+          - goos: openbsd
+            goarch: arm64
+          - goos: openbsd
+            goarch: arm
+          - goarch: arm
+            goarm: ''
 
     runs-on: ubuntu-latest
 
@@ -43,30 +57,30 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.24'
+        go-version: '1.25'
 
     - name: Build
       id: build_step
       env:
         GOOS: ${{ matrix.goos }}
         GOARCH: ${{ matrix.goarch }}
-        GOARM: ${{ matrix.goarch == 'arm' && '6' || '' }}
+        GOARM: ${{ matrix.goarm }}
       run: |
         output_name="discourse-tui-${GOOS}-${GOARCH}"
         if [ "$GOOS" = "windows" ]; then
           output_name+=".exe"
         fi
-        if [ "$GOARCH" = "arm" ]; then
-          output_name+="-v6"
+        if [ -n "$GOARM" ]; then
+          output_name+="-v${GOARM}"
         fi
-        go build -v -ldflags="-s -w" -o "${output_name}" .
+        go build -v -ldflags="-s -w" -o "${output_name}" ./cmd
         echo "Built: ${output_name}"
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: discourse-tui-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarch == 'arm' && '-v6' || '' }}
-        path: discourse-tui-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarch == 'arm' && '-v6' || '' }}*
+        name: discourse-tui-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm && format('-v{0}', matrix.goarm) || '' }}
+        path: discourse-tui-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm && format('-v{0}', matrix.goarm) || '' }}*
 
   release:
     name: Create Release
